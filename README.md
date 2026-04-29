@@ -210,7 +210,7 @@ cargo fmt
 
 ## Docs
 
-- [Project Notes](docs/INVESTMENT.md)
+- [Project Notes](docs/notes.md)
 - [Claude Code](docs/tools/claude-code.md)
 - [Codex](docs/tools/codex.md)
 - [Crush](docs/tools/crush.md)
