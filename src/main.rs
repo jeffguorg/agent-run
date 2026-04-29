@@ -8,12 +8,12 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use agent::{ResolvedLaunch, launch, required_protocol};
+use agent::{ResolvedLaunch, launch, preferred_protocols};
 use cli::{Cli, Commands, ForceScopeSet, agent_name};
 use config::{config_path, load_config, run_config};
 use error::AppError;
 use protocol::{
-    base_url_for, fetch_models, merge_models, protocol_name, resolve_key, resolve_model,
+    Protocol, base_url_for, fetch_models, merge_models, protocol_name, resolve_key, resolve_model,
 };
 
 fn main() -> ExitCode {
@@ -38,15 +38,7 @@ fn run() -> Result<ExitCode, AppError> {
                 AppError::Message(format!("unknown provider `{}`", args.provider))
             })?;
 
-            let protocol = required_protocol(args.agent);
-            if !provider.protocols.contains(&protocol) && !force.protocol {
-                return Err(AppError::Message(format!(
-                    "provider `{}` does not support required protocol `{}` for agent `{}`",
-                    args.provider,
-                    protocol_name(protocol),
-                    agent_name(args.agent)
-                )));
-            }
+            let protocol = resolve_protocol(args.agent, &provider.protocols, force)?;
 
             let base_url = base_url_for(provider, protocol).ok_or_else(|| {
                 AppError::Message(format!(
@@ -69,6 +61,7 @@ fn run() -> Result<ExitCode, AppError> {
             let launch_spec = ResolvedLaunch {
                 provider_name: &args.provider,
                 provider,
+                protocol,
                 key,
                 model: selected_model,
                 agent_args: args.agent_args,
@@ -77,4 +70,34 @@ fn run() -> Result<ExitCode, AppError> {
             launch(args.agent, launch_spec)
         }
     }
+}
+
+fn resolve_protocol(
+    agent: cli::Agent,
+    provider_protocols: &[Protocol],
+    force: ForceScopeSet,
+) -> Result<Protocol, AppError> {
+    let preferred = preferred_protocols(agent);
+    if let Some(protocol) = preferred
+        .iter()
+        .copied()
+        .find(|protocol| provider_protocols.contains(protocol))
+    {
+        return Ok(protocol);
+    }
+
+    if force.protocol {
+        return Ok(preferred[0]);
+    }
+
+    let supported = preferred
+        .iter()
+        .map(|protocol| format!("`{}`", protocol_name(*protocol)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(AppError::Message(format!(
+        "provider does not support any protocol required by agent `{}`; supported choices are {}",
+        agent_name(agent),
+        supported
+    )))
 }

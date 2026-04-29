@@ -124,6 +124,20 @@ pub fn source_codex_config_path() -> Result<PathBuf, AppError> {
     Ok(PathBuf::from(home).join(".codex").join("config.toml"))
 }
 
+pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
+    if let Ok(path) = env::var("CRUSH_GLOBAL_CONFIG") {
+        return Ok(PathBuf::from(path).join("crush.json"));
+    }
+
+    let home = env::var("HOME").map_err(|_| {
+        AppError::Message("cannot resolve Crush config path: HOME is not set".to_string())
+    })?;
+    Ok(PathBuf::from(home)
+        .join(".config")
+        .join("crush")
+        .join("crush.json"))
+}
+
 pub fn source_hermes_home() -> Result<PathBuf, AppError> {
     if let Ok(path) = env::var("HERMES_HOME") {
         return Ok(PathBuf::from(path));

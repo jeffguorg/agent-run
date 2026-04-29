@@ -44,6 +44,7 @@ pub enum Agent {
     Claude,
     Codex,
     Hermes,
+    Crush,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -77,5 +78,6 @@ pub fn agent_name(agent: Agent) -> &'static str {
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::Hermes => "hermes",
+        Agent::Crush => "crush",
     }
 }

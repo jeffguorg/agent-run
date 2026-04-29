@@ -9,6 +9,7 @@ Current focus:
 - `claude`
 - `codex`
 - `hermes`
+- `crush`
 
 Current protocol support:
 
@@ -26,12 +27,15 @@ Different coding agents expect different configuration shapes:
 
 `agent-run` gives you one provider config and adapts it to the target agent at launch time.
 
+The provider config stays generic; each agent adapter is responsible for mapping that generic config into the shape the downstream tool expects.
+
 ## What It Does
 
 - Centralizes provider definitions in one config file
 - Resolves secrets from either `key` or `key_command`
 - Optionally loads model lists from provider APIs
 - Validates protocol compatibility before launch
+- Negotiates the final protocol for agents that support more than one wire API
 - Generates temporary runtime config where needed
 - Forwards extra args to the underlying agent command
 
@@ -55,6 +59,12 @@ Different coding agents expect different configuration shapes:
 - protocol: `openai-chat-completions`
 - launch mode: temporary `HERMES_HOME` and generated `config.yaml`
 - injects API key via environment variable
+
+### Crush
+
+- protocol: prefers `openai-chat-completions`, falls back to `anthropic`
+- launch mode: generated `crush.json` plus isolated `--data-dir`
+- merges existing global Crush config into the runtime config
 
 ## Configuration
 
@@ -102,6 +112,18 @@ providers:
 
 See [config.demo.yaml](config.demo.yaml) for a fuller example.
 
+## Protocol Negotiation
+
+`protocols` declares what a provider can speak.
+
+- `claude` requires `anthropic`
+- `codex` requires `openai-responses`
+- `hermes` requires `openai-chat-completions`
+- `crush` prefers `openai-chat-completions` and falls back to `anthropic`
+
+For single-protocol agents, launch fails unless the provider supports that protocol or `--force protocol` is used.
+For `crush`, `agent-run` picks the first supported protocol from that preference order.
+
 ## Usage
 
 Open or initialize your config:
@@ -129,6 +151,13 @@ Launch Hermes:
 ```bash
 agent-run launch deepseek hermes
 agent-run launch ollama hermes
+```
+
+Launch Crush:
+
+```bash
+agent-run launch deepseek crush
+agent-run launch kimi-code crush run "explain this repository"
 ```
 
 Forward extra args to the underlying agent:
@@ -160,6 +189,12 @@ Each provider can use either:
 - `claude` uses temporary env plus a one-time onboarding state fix
 - `codex` uses generated runtime config under cache
 - `hermes` uses generated runtime config under cache
+- `crush` uses generated runtime config and isolated data dir under cache
+
+Crush note:
+
+- `CRUSH_GLOBAL_CONFIG` must point to a config directory, not directly to `crush.json`
+- Crush may still read the current project directory and initialize project-local files such as `AGENTS.md`
 
 ## Development
 
@@ -178,4 +213,5 @@ cargo fmt
 - [Project Notes](docs/INVESTMENT.md)
 - [Claude Code](docs/tools/claude-code.md)
 - [Codex](docs/tools/codex.md)
+- [Crush](docs/tools/crush.md)
 - [Hermes Agent](docs/tools/hermes-agent.md)
