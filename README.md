@@ -167,7 +167,9 @@ agent-run completion bash
 agent-run completion zsh
 ```
 
-Recommended shell setup:
+When installed from Nix, bash and zsh completion files are installed automatically.
+
+Manual shell setup is only needed when running the binary outside the Nix package:
 
 ```bash
 source <(agent-run completion bash)
