@@ -1,4 +1,7 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap_complete::{ArgValueCandidates, ArgValueCompleter};
+
+use crate::completion::{complete_models_for_current_provider, provider_candidates};
 
 #[derive(Parser, Debug)]
 #[command(name = "agent-run")]
@@ -12,9 +15,10 @@ pub struct Cli {
 pub enum Commands {
     Config,
     Launch(LaunchArgs),
+    Completion(CompletionArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct LaunchArgs {
     pub provider: String,
     #[arg(long)]
@@ -32,6 +36,11 @@ pub struct LaunchArgs {
     pub agent_args: Vec<String>,
 }
 
+#[derive(Args, Debug)]
+pub struct CompletionArgs {
+    pub shell: CompletionShell,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 pub enum ForceScope {
     Model,
@@ -45,6 +54,15 @@ pub enum Agent {
     Codex,
     Hermes,
     Crush,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    // TODO(low): support fish completion.
+    // TODO(low): support nushell completion.
+    // TODO(low): evaluate powershell and elvish support.
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -80,4 +98,20 @@ pub fn agent_name(agent: Agent) -> &'static str {
         Agent::Hermes => "hermes",
         Agent::Crush => "crush",
     }
+}
+
+pub fn build_cli() -> clap::Command {
+    Cli::command().mut_subcommand("launch", |subcmd| {
+        subcmd.mut_args(|arg| match arg.get_id().as_str() {
+            "provider" => arg.add(ArgValueCandidates::new(provider_candidates)),
+            "model" => arg.add(ArgValueCompleter::new(complete_models_for_current_provider)),
+            _ => arg,
+        })
+    })
+}
+
+pub fn parse() -> Cli {
+    let mut cmd = build_cli();
+    let mut matches = cmd.get_matches_mut();
+    Cli::from_arg_matches_mut(&mut matches).unwrap_or_else(|err| err.exit())
 }

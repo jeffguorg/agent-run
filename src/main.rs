@@ -1,15 +1,15 @@
 mod agent;
 mod cli;
+mod completion;
 mod config;
 mod error;
 mod protocol;
 
 use std::process::ExitCode;
 
-use clap::Parser;
-
 use agent::{ResolvedLaunch, launch, preferred_protocols};
-use cli::{Cli, Commands, ForceScopeSet, agent_name};
+use cli::{Commands, ForceScopeSet, agent_name};
+use completion::{enable_dynamic_completion, print_completion};
 use config::{config_path, load_config, run_config};
 use error::AppError;
 use protocol::{
@@ -27,9 +27,14 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<ExitCode, AppError> {
-    let cli = Cli::parse();
+    enable_dynamic_completion();
+    let cli = cli::parse();
     match cli.command {
         Commands::Config => run_config(),
+        Commands::Completion(args) => {
+            print_completion(args.shell);
+            Ok(ExitCode::SUCCESS)
+        }
         Commands::Launch(args) => {
             let force = ForceScopeSet::from_scope(args.force);
             let config_path = config_path()?;

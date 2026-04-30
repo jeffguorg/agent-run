@@ -160,6 +160,23 @@ agent-run launch deepseek crush
 agent-run launch kimi-code crush run "explain this repository"
 ```
 
+Generate shell completion:
+
+```bash
+agent-run completion bash
+agent-run completion zsh
+```
+
+Recommended shell setup:
+
+```bash
+source <(agent-run completion bash)
+```
+
+```zsh
+source <(agent-run completion zsh)
+```
+
 Forward extra args to the underlying agent:
 
 ```bash
@@ -172,6 +189,14 @@ Both forms are supported:
 
 - `agent-run launch provider agent arg1 arg2`
 - `agent-run launch provider agent -- arg1 arg2`
+
+Completion notes:
+
+- Bash and Zsh are supported.
+- Provider completion is loaded from local `config.yaml`.
+- `--model` completion only uses the selected provider's local `default_model` and `models`.
+- Completion does not query provider APIs.
+- Trailing `agent_args` are forwarded but are not completed.
 
 ## Secret Handling
 
