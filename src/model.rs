@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace, warn};
 
@@ -97,6 +98,67 @@ pub struct LoadRemoteModels {
     pub used_cache: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ModelApiFilterConfig {
+    Disabled,
+    Rules(Vec<ModelApiFilterRule>),
+}
+
+impl Default for ModelApiFilterConfig {
+    fn default() -> Self {
+        Self::Rules(vec![ModelApiFilterRule::default()])
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelApiFilterConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = Option::<Vec<ModelApiFilterRule>>::deserialize(deserializer)?;
+        Ok(match raw {
+            Some(rules) if rules.is_empty() => Self::Disabled,
+            Some(rules) => Self::Rules(rules),
+            None => Self::Disabled,
+        })
+    }
+}
+
+impl ModelApiFilterConfig {
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, Self::Rules(rules) if !rules.is_empty())
+    }
+
+    pub fn rules(&self) -> &[ModelApiFilterRule] {
+        match self {
+            Self::Disabled => &[],
+            Self::Rules(rules) => rules,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+pub struct ModelApiFilterRule {
+    pub filter: String,
+    #[serde(default = "default_model_api_filter_order_key")]
+    pub order_key: Vec<String>,
+    #[serde(default = "default_model_api_filter_desc")]
+    pub desc: bool,
+    #[serde(default = "default_model_api_filter_top")]
+    pub top: Option<usize>,
+}
+
+impl Default for ModelApiFilterRule {
+    fn default() -> Self {
+        Self {
+            filter: "^(.*)$".to_string(),
+            order_key: default_model_api_filter_order_key(),
+            desc: default_model_api_filter_desc(),
+            top: default_model_api_filter_top(),
+        }
+    }
+}
+
 pub fn normalize_local_models(raw_models: &[RawModelConfig]) -> Vec<ModelSpec> {
     raw_models
         .iter()
@@ -134,6 +196,90 @@ pub fn normalize_local_models(raw_models: &[RawModelConfig]) -> Vec<ModelSpec> {
             }
         })
         .collect()
+}
+
+pub fn apply_model_api_filters(
+    provider_name: &str,
+    models: &[ModelSpec],
+    filters: &ModelApiFilterConfig,
+) -> Result<Vec<ModelSpec>, AppError> {
+    if !filters.is_enabled() {
+        trace!(
+            provider_name,
+            model_count = models.len(),
+            "model API filtering disabled for provider"
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut selected = Vec::new();
+    let mut seen = BTreeMap::new();
+
+    for (rule_index, rule) in filters.rules().iter().enumerate() {
+        let regex = Regex::new(&rule.filter).map_err(|source| {
+            AppError::Message(format!(
+                "invalid model_api_filters[{rule_index}].filter for provider `{provider_name}`: {source}"
+            ))
+        })?;
+
+        let mut matched = models
+            .iter()
+            .filter_map(|model| {
+                regex.captures(&model.id).map(|captures| {
+                    let order_keys = if rule.order_key.is_empty() {
+                        vec![model.id.clone()]
+                    } else {
+                        rule.order_key
+                            .iter()
+                            .map(|template| {
+                                let mut expanded = String::new();
+                                captures.expand(template, &mut expanded);
+                                expanded
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    (order_keys, model.clone())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        matched.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.id.cmp(&right.1.id))
+        });
+        if rule.desc {
+            matched.reverse();
+        }
+        if let Some(top) = rule.top {
+            matched.truncate(top);
+        }
+
+        trace!(
+            provider_name,
+            rule_index,
+            filter = rule.filter,
+            matched_model_count = matched.len(),
+            "applied model API filter rule"
+        );
+
+        for (_, model) in matched {
+            if seen.contains_key(&model.id) {
+                continue;
+            }
+            seen.insert(model.id.clone(), ());
+            selected.push(model);
+        }
+    }
+
+    debug!(
+        provider_name,
+        original_model_count = models.len(),
+        filtered_model_count = selected.len(),
+        rule_count = filters.rules().len(),
+        "applied model API filters"
+    );
+    Ok(selected)
 }
 
 pub fn merge_models(local: &[ModelSpec], discovered: &[ModelSpec]) -> Vec<ModelSpec> {
@@ -404,4 +550,16 @@ pub fn log_cache_fallback(
         error = %err,
         "model API fetch failed; falling back to cached models"
     );
+}
+
+fn default_model_api_filter_order_key() -> Vec<String> {
+    vec![r"\1".to_string()]
+}
+
+fn default_model_api_filter_desc() -> bool {
+    true
+}
+
+fn default_model_api_filter_top() -> Option<usize> {
+    Some(100)
 }

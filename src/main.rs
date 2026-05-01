@@ -68,17 +68,25 @@ fn run() -> Result<ExitCode, AppError> {
             })?;
 
             let key = resolve_key(provider)?;
+            let effective_filters = provider.effective_model_api_filters();
             let local_models = normalize_local_models(&provider.models);
             debug!(
                 provider = %args.provider,
                 local_model_count = local_models.len(),
-                disable_model_loading_from_api = provider.disable_model_loading_from_api,
+                model_api_filters_enabled = effective_filters.is_enabled(),
                 "loaded local models from config"
             );
-            let remote_models = if provider.disable_model_loading_from_api {
+            let remote_models = if !effective_filters.is_enabled() {
                 LoadRemoteModels::default()
             } else {
-                load_remote_models_for_protocol(&args.provider, protocol, base_url, &key, false)?
+                load_remote_models_for_protocol(
+                    &args.provider,
+                    protocol,
+                    base_url,
+                    &key,
+                    false,
+                    effective_filters.as_ref(),
+                )?
             };
             let merged_models = merge_models(&local_models, &remote_models.models);
             let merged_model_ids = model_ids(&merged_models);
@@ -197,7 +205,7 @@ fn print_provider_models(
         "source: {}",
         if catalog.used_cache {
             "cache"
-        } else if provider.disable_model_loading_from_api {
+        } else if !provider.effective_model_api_filters().is_enabled() {
             "local-only"
         } else {
             "remote"

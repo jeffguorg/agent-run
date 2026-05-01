@@ -3,8 +3,8 @@ use tracing::{debug, warn};
 use crate::config::ProviderConfig;
 use crate::error::AppError;
 use crate::model::{
-    LoadRemoteModels, ModelSpec, load_cached_remote_models, load_model_cache, log_cache_fallback,
-    merge_models, normalize_local_models, write_model_cache,
+    LoadRemoteModels, ModelSpec, apply_model_api_filters, load_cached_remote_models,
+    load_model_cache, log_cache_fallback, merge_models, normalize_local_models, write_model_cache,
 };
 use crate::protocol::{
     Protocol, base_url_for, fetch_models, model_list_url, protocol_name, resolve_key,
@@ -32,6 +32,7 @@ pub fn collect_provider_model_catalog(
     mode: RemoteLoadMode,
 ) -> Result<ProviderModelCatalog, AppError> {
     let local_models = normalize_local_models(&provider.models);
+    let effective_filters = provider.effective_model_api_filters();
     let protocols = provider
         .protocols
         .iter()
@@ -39,7 +40,7 @@ pub fn collect_provider_model_catalog(
         .filter(|protocol| base_url_for(provider, *protocol).is_some())
         .collect::<Vec<_>>();
 
-    let (protocol, remote) = if provider.disable_model_loading_from_api {
+    let (protocol, remote) = if !effective_filters.is_enabled() {
         (None, LoadRemoteModels::default())
     } else {
         load_remote_models_for_provider(provider_name, provider, &protocols, mode)?
@@ -71,6 +72,7 @@ pub fn load_remote_models_for_protocol(
     base_url: &str,
     key: &str,
     force_refresh: bool,
+    filters: &crate::model::ModelApiFilterConfig,
 ) -> Result<LoadRemoteModels, AppError> {
     if !force_refresh {
         match load_cached_remote_models(provider_name, protocol, false) {
@@ -94,6 +96,7 @@ pub fn load_remote_models_for_protocol(
 
     match fetch_models(protocol, base_url, key) {
         Ok(models) => {
+            let models = apply_model_api_filters(provider_name, &models, filters)?;
             write_model_cache(provider_name, protocol, &models)?;
             Ok(LoadRemoteModels {
                 models,
@@ -132,6 +135,7 @@ fn load_remote_models_for_provider(
     protocols: &[Protocol],
     mode: RemoteLoadMode,
 ) -> Result<(Option<Protocol>, LoadRemoteModels), AppError> {
+    let effective_filters = provider.effective_model_api_filters();
     match mode {
         RemoteLoadMode::CacheOnly => {
             let snapshot = load_model_cache(provider_name)?;
@@ -187,6 +191,7 @@ fn load_remote_models_for_provider(
                     base_url,
                     &key,
                     mode == RemoteLoadMode::ForceRefresh,
+                    effective_filters.as_ref(),
                 ) {
                     Ok(remote) => {
                         consider_better_remote(&mut best_remote, Some(*protocol), remote);

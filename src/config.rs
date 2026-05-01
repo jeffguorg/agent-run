@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -8,7 +9,7 @@ use std::process::{Command, ExitCode};
 use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::model::RawModelConfig;
+use crate::model::{ModelApiFilterConfig, RawModelConfig};
 use crate::protocol::Protocol;
 
 const DEMO_CONFIG: &str = include_str!("../config.demo.yaml");
@@ -30,7 +31,19 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub models: Vec<RawModelConfig>,
     #[serde(default)]
-    pub disable_model_loading_from_api: bool,
+    pub model_api_filters: ModelApiFilterConfig,
+    #[serde(default, rename = "disable_model_loading_from_api")]
+    pub legacy_disable_model_loading_from_api: Option<bool>,
+}
+
+impl ProviderConfig {
+    pub fn effective_model_api_filters(&self) -> Cow<'_, ModelApiFilterConfig> {
+        if self.legacy_disable_model_loading_from_api == Some(true) {
+            Cow::Owned(ModelApiFilterConfig::Disabled)
+        } else {
+            Cow::Borrowed(&self.model_api_filters)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
