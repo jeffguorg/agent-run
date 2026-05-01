@@ -13,9 +13,15 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    Config,
+    Config(ConfigArgs),
     Launch(LaunchArgs),
     Completion(CompletionArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ConfigArgs {
+    #[arg(long)]
+    pub bootstrap_config: bool,
 }
 
 #[derive(Args, Debug)]

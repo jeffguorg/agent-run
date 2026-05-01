@@ -10,6 +10,8 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::protocol::Protocol;
 
+const DEMO_CONFIG: &str = include_str!("../config.demo.yaml");
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub providers: BTreeMap<String, ProviderConfig>,
@@ -37,6 +39,12 @@ pub struct BaseUrls {
 }
 
 pub fn load_config(path: &Path) -> Result<AppConfig, AppError> {
+    if !path.exists() {
+        return Err(AppError::Message(format!(
+            "config file does not exist: {}",
+            path.display()
+        )));
+    }
     let raw = fs::read_to_string(path).map_err(|source| AppError::ReadConfig {
         path: path.to_path_buf(),
         source,
@@ -47,21 +55,21 @@ pub fn load_config(path: &Path) -> Result<AppConfig, AppError> {
     })
 }
 
-pub fn run_config() -> Result<ExitCode, AppError> {
+pub fn run_config(bootstrap_config: bool) -> Result<ExitCode, AppError> {
     let path = config_path()?;
     if !path.exists() {
-        ensure_parent_dir(&path)?;
-        let demo = fs::read_to_string("config.demo.yaml").map_err(|source| {
-            AppError::Message(format!(
-                "config file does not exist and config.demo.yaml could not be read: {source}"
-            ))
-        })?;
-        fs::write(&path, demo).map_err(|source| {
-            AppError::Message(format!(
-                "failed to initialize config at {}: {source}",
+        if !bootstrap_config {
+            return Err(AppError::Message(format!(
+                "config file does not exist: {}; rerun with `agent-run config --bootstrap-config` to create a sample config",
                 path.display()
-            ))
-        })?;
+            )));
+        }
+
+        eprintln!(
+            "warning: config file does not exist at {}; writing embedded sample config",
+            path.display()
+        );
+        write_demo_config(&path)?;
     }
 
     let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
@@ -195,4 +203,14 @@ fn ensure_parent_dir(path: &Path) -> Result<(), AppError> {
         })?;
     }
     Ok(())
+}
+
+fn write_demo_config(path: &Path) -> Result<(), AppError> {
+    ensure_parent_dir(path)?;
+    fs::write(path, DEMO_CONFIG).map_err(|source| {
+        AppError::Message(format!(
+            "failed to initialize config at {}: {source}",
+            path.display()
+        ))
+    })
 }

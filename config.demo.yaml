@@ -1,72 +1,23 @@
 providers:
-  # 订阅类
-  volcengine-coding-plan:
-    protocols:
-      - openai-chat-completions
-      - anthropic
-    base_urls:
-      openai: https://ark.cn-beijing.volces.com/api/coding/v3
-      anthropic: https://ark.cn-beijing.volces.com/api/coding
-    key_command:
-      - printenv
-      - ARK_API_KEY
-    default_model: ark-code-latest
-    models:
-      - ark-code-latest
-      - doubao-seed-2.0-code
-      - kimi-k2.5
-      - glm-4.7
-    disable_model_loading_from_api: true
-
-  kimi-code:
+  kimi-for-coding:
     protocols:
       - openai-chat-completions
       - anthropic
     base_urls:
       openai: https://api.kimi.com/coding/v1
       anthropic: https://api.kimi.com/coding
-    key_command:
-      - printenv
-      - KIMI_API_KEY
+    key_command: ["printenv", "KIMI_CODE_API_KEY"]
+    ## or you can extract your key from password manager like this
+    #key_command: ["keepassxc-cli", "show", "-a", "Password", "/path/to/Password.kdbx", "kimi-for-coding"]
+    ## or specify your key directly
+    #key: sk-*********
     anthropic_use_api_key: true
     default_model: kimi-for-coding
     models:
       - kimi-for-coding
     disable_model_loading_from_api: true
 
-  minimax-token-plan:
-    protocols:
-      - openai-chat-completions
-      - anthropic
-    base_urls:
-      openai: https://api.minimaxi.com/v1
-      anthropic: https://api.minimaxi.com/anthropic
-    key_command:
-      - printenv
-      - MINIMAX_API_KEY
-    default_model: MiniMax-M2.7
-    models:
-      - MiniMax-M2.7
-      - MiniMax-M2.7-highspeed
-    disable_model_loading_from_api: true
-
   # 按量类
-  deepseek:
-    protocols:
-      - openai-chat-completions
-      - anthropic
-    base_urls:
-      openai: https://api.deepseek.com
-      anthropic: https://api.deepseek.com/anthropic
-    key_command:
-      - printenv
-      - DEEPSEEK_API_KEY
-    default_model: deepseek-v4-pro
-    models:
-      - deepseek-v4-pro
-      - deepseek-v4-flash
-    disable_model_loading_from_api: true
-
   openrouter:
     protocols:
       - openai-chat-completions
@@ -87,7 +38,11 @@ providers:
     disable_model_loading_from_api: true
 
   # 本地类
-  ollama:
+  # name 'ollama' is preserved by some coding agent internally, like codex
+  #
+  # if access to ollama on is needed and you need to configure it manually, use
+  # names like ollama-localhost or other names other than ollama
+  ollama-localhost:
     protocols:
       - openai-chat-completions
       - openai-responses
@@ -101,9 +56,14 @@ providers:
       - gpt-oss:120b-cloud
     disable_model_loading_from_api: false
 
-  lmstudio:
+  # name 'lmstudio' is preserved by some coding agent internally, like codex
+  #
+  # if access to lmstudio on is needed and you need to configure it manually, use
+  # names like lmstudio-localhost or other names other than lmstudio
+  lmstudio-localhost:
     protocols:
       - openai-responses
+      - openai-chat-completions
       - anthropic
     base_urls:
       openai: http://localhost:1234/v1

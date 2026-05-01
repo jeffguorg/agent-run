@@ -130,7 +130,10 @@ Open or initialize your config:
 
 ```bash
 agent-run config
+agent-run config --bootstrap-config
 ```
+
+`agent-run config` only opens an existing config. Use `--bootstrap-config` to write the embedded sample config first when the file does not exist.
 
 Launch Claude:
 

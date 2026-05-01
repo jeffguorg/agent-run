@@ -30,7 +30,7 @@ fn run() -> Result<ExitCode, AppError> {
     enable_dynamic_completion();
     let cli = cli::parse();
     match cli.command {
-        Commands::Config => run_config(),
+        Commands::Config(args) => run_config(args.bootstrap_config),
         Commands::Completion(args) => {
             print_completion(args.shell);
             Ok(ExitCode::SUCCESS)
