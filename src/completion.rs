@@ -1,12 +1,15 @@
 use std::collections::BTreeSet;
+use std::env;
 use std::ffi::{OsStr, OsString};
 
 use clap::CommandFactory;
 use clap::builder::StyledStr;
 use clap_complete::{CompleteEnv, CompletionCandidate};
 
+use crate::catalog::{RemoteLoadMode, collect_provider_model_catalog};
 use crate::cli::{Cli, CompletionShell};
 use crate::config::{ProviderConfig, load_config};
+use crate::model::{describe_model_help, normalize_local_models};
 use crate::protocol::Protocol;
 
 const COMPLETE_ENV: &str = "AGENT_RUN_COMPLETE";
@@ -63,7 +66,7 @@ pub fn provider_candidates() -> Vec<CompletionCandidate> {
 }
 
 pub fn complete_models_for_current_provider(current: &OsStr) -> Vec<CompletionCandidate> {
-    let Some(provider) = completion_provider_from_argv() else {
+    let Some(provider_name) = completion_provider_from_argv() else {
         return Vec::new();
     };
     let Ok(config_path) = crate::config::config_path() else {
@@ -72,20 +75,40 @@ pub fn complete_models_for_current_provider(current: &OsStr) -> Vec<CompletionCa
     let Ok(config) = load_config(&config_path) else {
         return Vec::new();
     };
-    let Some(provider) = config.providers.get(&provider) else {
+    let Some(provider) = config.providers.get(&provider_name) else {
         return Vec::new();
     };
 
     let current = current.to_string_lossy();
     let mut seen = BTreeSet::new();
     let mut candidates = Vec::new();
+    let mode = if completion_refresh_disabled() {
+        RemoteLoadMode::CacheOnly
+    } else {
+        RemoteLoadMode::AutoRefresh
+    };
+    let fallback_local_models = normalize_local_models(&provider.models);
+    let catalog = collect_provider_model_catalog(&provider_name, provider, mode).ok();
+    let local_models = catalog
+        .as_ref()
+        .map(|catalog| catalog.local_models.clone())
+        .unwrap_or(fallback_local_models);
+    let discovered_models = catalog
+        .as_ref()
+        .map(|catalog| catalog.remote_models.clone())
+        .unwrap_or_default();
 
-    for model in model_candidates(provider) {
+    for model in model_candidates(provider, &local_models, &discovered_models) {
         if seen.insert(model.clone()) && model.starts_with(current.as_ref()) {
             candidates.push(
                 labeled_candidate(
                     model.clone(),
-                    &model_help(provider.default_model.as_deref(), &provider.models, &model),
+                    &describe_model_help(
+                        provider.default_model.as_deref(),
+                        &local_models,
+                        &discovered_models,
+                        &model,
+                    ),
                     0,
                 )
                 .id(Some(format!("model:{model}"))),
@@ -196,34 +219,35 @@ fn protocol_labels(protocols: &[Protocol]) -> Vec<&'static str> {
     labels
 }
 
-fn model_candidates(provider: &ProviderConfig) -> Vec<String> {
+fn model_candidates(
+    provider: &ProviderConfig,
+    local_models: &[crate::model::ModelSpec],
+    cached_models: &[crate::model::ModelSpec],
+) -> Vec<String> {
     let mut models = Vec::new();
     if let Some(default_model) = provider.default_model.as_ref() {
         models.push(default_model.clone());
     }
-    for model in &provider.models {
-        if !models.iter().any(|existing| existing == model) {
-            models.push(model.clone());
+    for model in local_models.iter().chain(cached_models.iter()) {
+        if !models.iter().any(|existing| existing == &model.id) {
+            models.push(model.id.clone());
         }
     }
     models
 }
 
-fn model_help(default_model: Option<&str>, configured_models: &[String], model: &str) -> String {
-    let is_default = default_model == Some(model);
-    let is_configured = configured_models
-        .iter()
-        .any(|configured| configured == model);
-
-    match (is_default, is_configured) {
-        (true, true) => "default + configured".to_string(),
-        (true, false) => "default".to_string(),
-        (false, true) => "configured".to_string(),
-        (false, false) => "model".to_string(),
-    }
-}
-
-// TODO(high): support cached remote model candidates for completion.
 // TODO(high): add provider-scoped remote model cache invalidation commands.
 // TODO(high): support candidate matching modes for very large remote model catalogs.
 // TODO(high): compress remote model cache on disk.
+
+fn completion_refresh_disabled() -> bool {
+    env::var_os("AGENT_RUN_DISABLE_MODEL_COMPLETION_REFRESH")
+        .is_some_and(|value| matches_truthy(&value.to_string_lossy()))
+}
+
+fn matches_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}

@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use serde::Deserialize;
 
 use crate::error::AppError;
+use crate::model::RawModelConfig;
 use crate::protocol::Protocol;
 
 const DEMO_CONFIG: &str = include_str!("../config.demo.yaml");
@@ -27,7 +28,7 @@ pub struct ProviderConfig {
     pub anthropic_use_api_key: bool,
     pub default_model: Option<String>,
     #[serde(default)]
-    pub models: Vec<String>,
+    pub models: Vec<RawModelConfig>,
     #[serde(default)]
     pub disable_model_loading_from_api: bool,
 }

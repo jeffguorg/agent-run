@@ -48,6 +48,30 @@ pub enum AppError {
     ModelsResponse { url: String, reason: String },
     #[error("failed to create temporary runtime directory: {0}")]
     TempDir(#[source] std::io::Error),
+    #[error("failed to read cache file {path}: {source}")]
+    ReadCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse cache file {path}: {source}")]
+    ParseCache {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to serialize cache file {path}: {source}")]
+    SerializeCache {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to write cache file {path}: {source}")]
+    WriteCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to write temporary config {path}: {source}")]
     WriteTempConfig {
         path: PathBuf,

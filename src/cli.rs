@@ -16,6 +16,7 @@ pub enum Commands {
     Config(ConfigArgs),
     Launch(LaunchArgs),
     Completion(CompletionArgs),
+    Models(ModelsArgs),
 }
 
 #[derive(Args, Debug)]
@@ -45,6 +46,27 @@ pub struct LaunchArgs {
 #[derive(Args, Debug)]
 pub struct CompletionArgs {
     pub shell: CompletionShell,
+}
+
+#[derive(Args, Debug)]
+pub struct ModelsArgs {
+    #[command(subcommand)]
+    pub command: ModelsCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ModelsCommands {
+    List(ModelsListArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ModelsListArgs {
+    #[arg(long)]
+    pub refresh: bool,
+    #[arg(long, conflicts_with = "provider")]
+    pub all: bool,
+    #[arg(required_unless_present = "all")]
+    pub provider: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -107,13 +129,22 @@ pub fn agent_name(agent: Agent) -> &'static str {
 }
 
 pub fn build_cli() -> clap::Command {
-    Cli::command().mut_subcommand("launch", |subcmd| {
-        subcmd.mut_args(|arg| match arg.get_id().as_str() {
-            "provider" => arg.add(ArgValueCandidates::new(provider_candidates)),
-            "model" => arg.add(ArgValueCompleter::new(complete_models_for_current_provider)),
-            _ => arg,
+    Cli::command()
+        .mut_subcommand("launch", |subcmd| {
+            subcmd.mut_args(|arg| match arg.get_id().as_str() {
+                "provider" => arg.add(ArgValueCandidates::new(provider_candidates)),
+                "model" => arg.add(ArgValueCompleter::new(complete_models_for_current_provider)),
+                _ => arg,
+            })
         })
-    })
+        .mut_subcommand("models", |subcmd| {
+            subcmd.mut_subcommand("list", |subcmd| {
+                subcmd.mut_args(|arg| match arg.get_id().as_str() {
+                    "provider" => arg.add(ArgValueCandidates::new(provider_candidates)),
+                    _ => arg,
+                })
+            })
+        })
 }
 
 pub fn parse() -> Cli {
