@@ -25,7 +25,6 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = with pkgs; [
     installShellFiles
-    pkg-config
   ];
 
   doCheck = true;
