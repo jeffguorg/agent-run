@@ -7,7 +7,12 @@
     import (fetchTree nixpkgs.locked) {
       system = currentSystem;
     }
-  )
+    ),
+    sourceInfo ? {
+      BUILD_GIT_HASH = "unknown";
+      BUILD_GIT_DIRTY = "false";
+      BUILD_GIT_DATE = "";
+    }
 }:
 
 let
@@ -22,6 +27,8 @@ rustPlatform.buildRustPackage {
 
   src = pkgs.lib.cleanSource ./.;
   cargoLock.lockFile = ./Cargo.lock;
+
+  inherit (sourceInfo) BUILD_GIT_HASH BUILD_GIT_DIRTY BUILD_GIT_DATE;
 
   nativeBuildInputs = with pkgs; [
     installShellFiles

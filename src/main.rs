@@ -43,6 +43,10 @@ fn run() -> Result<ExitCode, AppError> {
             Ok(ExitCode::SUCCESS)
         }
         Commands::Models(args) => run_models_command(args.command),
+        Commands::Version => {
+            print_version();
+            Ok(ExitCode::SUCCESS)
+        }
         Commands::Launch(args) => {
             let force = ForceScopeSet::from_scope(args.force);
             let config_path = config_path()?;
@@ -127,6 +131,14 @@ fn init_tracing() {
         .with_env_filter(env_filter)
         .with_target(false)
         .init();
+}
+
+fn print_version() {
+    println!("agent-run {}", env!("CARGO_PKG_VERSION"));
+    println!("commit:     {}", env!("BUILD_GIT_HASH"));
+    println!("dirty:      {}", env!("BUILD_GIT_DIRTY"));
+    println!("commit-date:{}", env!("BUILD_GIT_DATE"));
+    println!("build-date: {}", env!("BUILD_DATE"));
 }
 
 fn resolve_protocol(

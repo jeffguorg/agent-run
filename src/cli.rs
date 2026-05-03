@@ -6,6 +6,12 @@ use crate::completion::{complete_models_for_current_provider, provider_candidate
 #[derive(Parser, Debug)]
 #[command(name = "agent-run")]
 #[command(about = "Launch coding agents with temporary provider settings")]
+#[command(version = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("BUILD_GIT_VERSION_TAG"),
+    ")"
+))]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -17,6 +23,7 @@ pub enum Commands {
     Launch(LaunchArgs),
     Completion(CompletionArgs),
     Models(ModelsArgs),
+    Version,
 }
 
 #[derive(Args, Debug)]
