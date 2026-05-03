@@ -33,7 +33,7 @@ The provider config stays generic; each agent adapter is responsible for mapping
 
 - Centralizes provider definitions in one config file
 - Resolves secrets from either `key` or `key_command`
-- Optionally loads model lists from provider APIs
+- Optionally loads model lists from provider APIs and caches normalized results on disk
 - Validates protocol compatibility before launch
 - Negotiates the final protocol for agents that support more than one wire API
 - Generates temporary runtime config where needed
@@ -91,7 +91,7 @@ providers:
     default_model: deepseek-v4-pro
     models:
       - deepseek-v4-pro
-    disable_model_loading_from_api: true
+    model_api_filters: []
 
   kimi-code:
     protocols:
@@ -107,7 +107,6 @@ providers:
     default_model: kimi-for-coding
     models:
       - kimi-for-coding
-    disable_model_loading_from_api: true
 ```
 
 See [config.demo.yaml](config.demo.yaml) for a fuller example.
@@ -182,6 +181,14 @@ source <(agent-run completion bash)
 source <(agent-run completion zsh)
 ```
 
+Model catalog:
+
+```bash
+agent-run models list openrouter
+agent-run models list --refresh openrouter
+agent-run models list --all
+```
+
 Forward extra args to the underlying agent:
 
 ```bash
@@ -199,9 +206,16 @@ Completion notes:
 
 - Bash and Zsh are supported.
 - Provider completion is loaded from local `config.yaml`.
-- `--model` completion only uses the selected provider's local `default_model` and `models`.
-- Completion does not query provider APIs.
+- `--model` completion refreshes remote model cache by default when `model_api_filters` is enabled.
+- Set `AGENT_RUN_DISABLE_MODEL_COMPLETION_REFRESH=1` to make completion use local models plus existing cache only.
+- Default log level is `WARN`. Completion runs stay silent unless you explicitly set `RUST_LOG`.
 - Trailing `agent_args` are forwarded but are not completed.
+
+Model API filter notes:
+
+- Omit `model_api_filters` to use the default catch-all rule.
+- Set `model_api_filters: []` or `model_api_filters: null` to disable remote model loading and cache interaction for that provider.
+- Filters are applied to normalized remote models before cache write.
 
 ## Secret Handling
 
