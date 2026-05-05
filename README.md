@@ -226,6 +226,27 @@ Each provider can use either:
 
 `key_command` is preferred when you want to fetch secrets from an external source such as a password manager, shell environment, or local secret helper.
 
+## Extra Environment Variables
+
+Each provider may declare an `extra_env` map that is injected into the launched agent process. The map is applied last and may override the env vars `agent-run` sets by default (e.g. `ANTHROPIC_API_KEY`, `CODEX_HOME`, `OPENAI_API_KEY`).
+
+Values support inline template expansion:
+
+- `${env:NAME}` &mdash; reads env var `NAME` from the launcher process; errors if unset.
+- `${context:FIELD}` &mdash; reads a resolved launch field. Supported fields: `provider`, `protocol`, `model`, `key`, `agent`, `base_url`.
+
+Example:
+
+```yaml
+providers:
+  openrouter:
+    # ...other fields...
+    extra_env:
+      OPENROUTER_API_KEY: "${context:key}"
+      HTTPS_PROXY: "${env:CORP_PROXY}"
+      AGENT_RUN_TRACE: "${context:agent}:${context:model}"
+```
+
 ## Runtime Strategy
 
 `agent-run` tries to avoid modifying long-lived agent config unless necessary.

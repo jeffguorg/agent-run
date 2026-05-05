@@ -34,6 +34,8 @@ pub struct ProviderConfig {
     pub model_api_filters: ModelApiFilterConfig,
     #[serde(default, rename = "disable_model_loading_from_api")]
     pub legacy_disable_model_loading_from_api: Option<bool>,
+    #[serde(default)]
+    pub extra_env: BTreeMap<String, String>,
 }
 
 impl ProviderConfig {

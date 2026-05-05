@@ -46,6 +46,16 @@ providers:
         order_key: ["\\1"]
         desc: true
         top: 4
+    ## extra_env injects extra environment variables into the launched agent.
+    ## Values support template expansion:
+    ##   ${env:NAME}        - looks up env var NAME from the launcher process
+    ##   ${context:provider|protocol|model|key|agent|base_url}
+    ##                      - resolved launch context fields
+    ## extra_env is applied last and may override agent built-in env vars.
+    #extra_env:
+    #  OPENROUTER_API_KEY: "${context:key}"
+    #  HTTPS_PROXY: "${env:CORP_PROXY}"
+    #  AGENT_RUN_TRACE: "${context:agent}:${context:model}"
 
   # 本地类
   # name 'ollama' is preserved by some coding agent internally, like codex

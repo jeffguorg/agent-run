@@ -106,6 +106,7 @@ fn run() -> Result<ExitCode, AppError> {
             );
 
             let launch_spec = ResolvedLaunch {
+                agent: args.agent,
                 provider_name: &args.provider,
                 provider,
                 protocol,

@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -6,16 +7,17 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use serde_yaml::{Mapping as YamlMapping, Value as YamlValue};
 use toml::Value as TomlValue;
 
-use crate::cli::Agent;
+use crate::cli::{Agent, agent_name};
 use crate::config::{
     ProviderConfig, cache_dir, claude_onboarding_lock_path, source_claude_state_path,
     source_codex_config_path, source_crush_config_path, source_hermes_config_path,
     try_create_lock_file,
 };
 use crate::error::AppError;
-use crate::protocol::Protocol;
+use crate::protocol::{Protocol, protocol_name};
 
 pub struct ResolvedLaunch<'a> {
+    pub agent: Agent,
     pub provider_name: &'a str,
     pub provider: &'a ProviderConfig,
     pub protocol: Protocol,
@@ -62,6 +64,7 @@ fn launch_claude(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
         cmd.env("ANTHROPIC_AUTH_TOKEN", &launch.key);
     }
     cmd.env("ANTHROPIC_BASE_URL", base_url);
+    apply_extra_env(&mut cmd, &launch)?;
     spawn_and_wait(cmd, "claude")
 }
 
@@ -88,6 +91,7 @@ fn launch_codex(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     cmd.args(&launch.agent_args);
     cmd.env("AGENT_RUN_OPENAI_API_KEY", &launch.key);
     cmd.env("CODEX_HOME", &runtime_dir);
+    apply_extra_env(&mut cmd, &launch)?;
 
     spawn_and_wait(cmd, "codex")
 }
@@ -112,6 +116,7 @@ fn launch_hermes(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     cmd.args(&launch.agent_args);
     cmd.env("HERMES_HOME", &runtime_dir);
     cmd.env("OPENAI_API_KEY", &launch.key);
+    apply_extra_env(&mut cmd, &launch)?;
 
     spawn_and_wait(cmd, "hermes")
 }
@@ -138,6 +143,7 @@ fn launch_crush(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     cmd.args(&launch.agent_args);
     cmd.env("CRUSH_GLOBAL_CONFIG", &config_dir);
     cmd.env("CRUSH_GLOBAL_DATA", &data_dir);
+    apply_extra_env(&mut cmd, &launch)?;
 
     spawn_and_wait(cmd, "crush")
 }
@@ -536,6 +542,76 @@ fn spawn_and_wait(mut cmd: Command, program: &str) -> Result<ExitCode, AppError>
         source,
     })?;
     Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+}
+
+fn apply_extra_env(cmd: &mut Command, launch: &ResolvedLaunch<'_>) -> Result<(), AppError> {
+    for (key, template) in &launch.provider.extra_env {
+        let value = expand_extra_env_value(key, template, launch)?;
+        cmd.env(key, value);
+    }
+    Ok(())
+}
+
+fn expand_extra_env_value(
+    key: &str,
+    template: &str,
+    launch: &ResolvedLaunch<'_>,
+) -> Result<String, AppError> {
+    let mut result = String::with_capacity(template.len());
+    let mut remaining = template;
+
+    while let Some(pos) = remaining.find("${") {
+        result.push_str(&remaining[..pos]);
+        let after_open = &remaining[pos + 2..];
+        let close = after_open.find('}').ok_or_else(|| {
+            AppError::Message(format!(
+                "extra_env value for `{key}` is `{template}` and has an unterminated `${{...}}`"
+            ))
+        })?;
+        let placeholder = &after_open[..close];
+        let (namespace, name) = placeholder.split_once(':').ok_or_else(|| {
+            AppError::Message(format!(
+                "extra_env value for `{key}` contains placeholder `${{{placeholder}}}` without `ns:name` form"
+            ))
+        })?;
+
+        let resolved = match namespace {
+            "env" => env::var(name).map_err(|_| {
+                AppError::Message(format!(
+                    "extra_env value for `{key}` references unset env var `{name}`"
+                ))
+            })?,
+            "context" => resolve_context_field(name, launch).map_err(|err| match err {
+                AppError::Message(msg) => AppError::Message(format!("extra_env `{key}`: {msg}")),
+                other => other,
+            })?,
+            other => {
+                return Err(AppError::Message(format!(
+                    "extra_env value for `{key}` uses unknown namespace `{other}`; expected `env` or `context`"
+                )));
+            }
+        };
+
+        result.push_str(&resolved);
+        remaining = &after_open[close + 1..];
+    }
+
+    result.push_str(remaining);
+    Ok(result)
+}
+
+fn resolve_context_field(name: &str, launch: &ResolvedLaunch<'_>) -> Result<String, AppError> {
+    match name {
+        "provider" => Ok(launch.provider_name.to_string()),
+        "protocol" => Ok(protocol_name(launch.protocol).to_string()),
+        "model" => Ok(launch.model.clone()),
+        "key" => Ok(launch.key.clone()),
+        "agent" => Ok(agent_name(launch.agent).to_string()),
+        "base_url" => Ok(base_url_for_launch(launch).to_string()),
+        other => Err(AppError::Message(format!(
+            "unknown context field `{other}`; supported: provider, protocol, model, key, agent, base_url"
+        ))),
+    }
 }
 
 fn sanitize_name(name: &str) -> String {
