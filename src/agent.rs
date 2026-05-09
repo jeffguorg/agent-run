@@ -9,20 +9,23 @@ use toml::Value as TomlValue;
 
 use crate::cli::{Agent, agent_name};
 use crate::config::{
-    ProviderConfig, cache_dir, claude_onboarding_lock_path, source_claude_state_path,
-    source_codex_config_path, source_crush_config_path, source_hermes_config_path,
-    try_create_lock_file,
+    ProviderConfig, cache_dir, claude_onboarding_lock_path, skeleton_dir, source_claude_state_path,
+    source_crush_config_path, try_create_lock_file,
 };
 use crate::error::AppError;
 use crate::protocol::{Protocol, protocol_name};
 
-pub struct ResolvedLaunch<'a> {
-    pub agent: Agent,
-    pub provider_name: &'a str,
+pub struct ManagedProviderLaunch<'a> {
     pub provider: &'a ProviderConfig,
     pub protocol: Protocol,
     pub key: String,
     pub model: String,
+}
+
+pub struct ResolvedLaunch<'a> {
+    pub agent: Agent,
+    pub provider_name: &'a str,
+    pub managed_provider: Option<ManagedProviderLaunch<'a>>,
     pub agent_args: Vec<String>,
 }
 
@@ -46,22 +49,25 @@ pub fn launch(agent: Agent, launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppE
 
 fn launch_claude(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     ensure_claude_onboarding_completed()?;
-    let base_url = launch
+    let managed = launch.managed_provider.as_ref().ok_or_else(|| {
+        AppError::Message("claude launch requires a resolved provider".to_string())
+    })?;
+    let base_url = managed
         .provider
         .base_urls
         .anthropic
         .as_deref()
         .expect("anthropic base URL checked before launch");
     let mut cmd = Command::new("claude");
-    cmd.arg("--model").arg(&launch.model);
+    cmd.arg("--model").arg(&managed.model);
     cmd.args(&launch.agent_args);
     cmd.env_remove("ANTHROPIC_API_KEY");
     cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
     cmd.env_remove("ANTHROPIC_BASE_URL");
-    if launch.provider.anthropic_use_api_key {
-        cmd.env("ANTHROPIC_API_KEY", &launch.key);
+    if managed.provider.anthropic_use_api_key {
+        cmd.env("ANTHROPIC_API_KEY", &managed.key);
     } else {
-        cmd.env("ANTHROPIC_AUTH_TOKEN", &launch.key);
+        cmd.env("ANTHROPIC_AUTH_TOKEN", &managed.key);
     }
     cmd.env("ANTHROPIC_BASE_URL", base_url);
     apply_extra_env(&mut cmd, &launch)?;
@@ -70,26 +76,27 @@ fn launch_claude(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
 
 fn launch_codex(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     let runtime_dir = codex_runtime_dir(launch.provider_name)?;
-    fs::create_dir_all(&runtime_dir).map_err(AppError::TempDir)?;
-    let config_path = runtime_dir.join("config.toml");
-    let profile_name = "agent-run";
-    let provider_name = sanitize_name(launch.provider_name);
-    let merged_config =
-        build_codex_runtime_config(&config_path, &provider_name, profile_name, &launch)?;
-    let provider_toml =
-        toml::to_string_pretty(&merged_config).map_err(|source| AppError::SerializeTomlConfig {
+    prepare_runtime_home(&runtime_dir, "codex")?;
+
+    let mut cmd = Command::new("codex");
+    if let Some(managed) = launch.managed_provider.as_ref() {
+        let config_path = runtime_dir.join("config.toml");
+        let profile_name = "agent-run";
+        let provider_name = sanitize_name(launch.provider_name);
+        let generated = render_codex_config(&provider_name, profile_name, &managed.model, managed);
+        let provider_toml =
+            toml::to_string_pretty(&generated).map_err(|source| AppError::SerializeTomlConfig {
+                path: config_path.clone(),
+                source,
+            })?;
+        fs::write(&config_path, provider_toml).map_err(|source| AppError::WriteTempConfig {
             path: config_path.clone(),
             source,
         })?;
-    fs::write(&config_path, provider_toml).map_err(|source| AppError::WriteTempConfig {
-        path: config_path.clone(),
-        source,
-    })?;
-
-    let mut cmd = Command::new("codex");
-    cmd.arg("--profile").arg(profile_name);
+        cmd.arg("--profile").arg(profile_name);
+        cmd.env("AGENT_RUN_OPENAI_API_KEY", &managed.key);
+    }
     cmd.args(&launch.agent_args);
-    cmd.env("AGENT_RUN_OPENAI_API_KEY", &launch.key);
     cmd.env("CODEX_HOME", &runtime_dir);
     apply_extra_env(&mut cmd, &launch)?;
 
@@ -98,30 +105,37 @@ fn launch_codex(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
 
 fn launch_hermes(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     let runtime_dir = hermes_runtime_dir(launch.provider_name)?;
-    fs::create_dir_all(&runtime_dir).map_err(AppError::TempDir)?;
-    let config_path = runtime_dir.join("config.yaml");
-    let merged_config = build_hermes_runtime_config(&config_path, &launch)?;
-    let raw = serde_yaml::to_string(&merged_config).map_err(|source| {
-        AppError::Message(format!(
-            "failed to serialize Hermes config for {}: {source}",
-            config_path.display()
-        ))
-    })?;
-    fs::write(&config_path, raw).map_err(|source| AppError::WriteTempConfig {
-        path: config_path.clone(),
-        source,
-    })?;
+    prepare_runtime_home(&runtime_dir, "hermes")?;
+    if let Some(managed) = launch.managed_provider.as_ref() {
+        let config_path = runtime_dir.join("config.yaml");
+        let generated = render_hermes_config(&managed.model, managed);
+        let raw = serde_yaml::to_string(&generated).map_err(|source| {
+            AppError::Message(format!(
+                "failed to serialize Hermes config for {}: {source}",
+                config_path.display()
+            ))
+        })?;
+        fs::write(&config_path, raw).map_err(|source| AppError::WriteTempConfig {
+            path: config_path.clone(),
+            source,
+        })?;
+    }
 
     let mut cmd = Command::new("hermes");
     cmd.args(&launch.agent_args);
     cmd.env("HERMES_HOME", &runtime_dir);
-    cmd.env("OPENAI_API_KEY", &launch.key);
+    if let Some(managed) = launch.managed_provider.as_ref() {
+        cmd.env("OPENAI_API_KEY", &managed.key);
+    }
     apply_extra_env(&mut cmd, &launch)?;
 
     spawn_and_wait(cmd, "hermes")
 }
 
 fn launch_crush(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
+    let managed = launch.managed_provider.as_ref().ok_or_else(|| {
+        AppError::Message("crush launch requires a resolved provider".to_string())
+    })?;
     let runtime_dir = crush_runtime_dir(launch.provider_name)?;
     let data_dir = runtime_dir.join("data");
     let config_dir = runtime_dir.join("config");
@@ -129,7 +143,7 @@ fn launch_crush(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     fs::create_dir_all(&data_dir).map_err(AppError::TempDir)?;
 
     let config_path = config_dir.join("crush.json");
-    let merged_config = build_crush_runtime_config(&config_path, launch.provider_name, &launch)?;
+    let merged_config = build_crush_runtime_config(&config_path, launch.provider_name, managed)?;
     let raw = serde_json::to_string_pretty(&merged_config).map_err(|source| {
         AppError::Message(format!("failed to serialize Crush config: {source}"))
     })?;
@@ -148,38 +162,13 @@ fn launch_crush(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
     spawn_and_wait(cmd, "crush")
 }
 
-fn build_codex_runtime_config(
-    runtime_config_path: &Path,
-    provider_name: &str,
-    profile_name: &str,
-    launch: &ResolvedLaunch<'_>,
-) -> Result<TomlValue, AppError> {
-    let source_config_path = source_codex_config_path()?;
-    let mut root = load_toml_config_if_exists(&source_config_path)?;
-    if !root.is_table() {
-        root = TomlValue::Table(toml::map::Map::new());
-    }
-
-    let generated = render_codex_config(provider_name, profile_name, &launch.model, launch);
-    merge_toml_values(&mut root, generated);
-
-    if runtime_config_path == source_config_path {
-        return Err(AppError::Message(format!(
-            "refusing to overwrite existing Codex config in place: {}",
-            runtime_config_path.display()
-        )));
-    }
-
-    Ok(root)
-}
-
 fn render_codex_config(
     provider_name: &str,
     profile_name: &str,
     model: &str,
-    launch: &ResolvedLaunch<'_>,
+    managed: &ManagedProviderLaunch<'_>,
 ) -> TomlValue {
-    let base_url = launch
+    let base_url = managed
         .provider
         .base_urls
         .openai
@@ -247,25 +236,10 @@ fn crush_runtime_dir(provider_name: &str) -> Result<PathBuf, AppError> {
         .join(sanitize_name(provider_name)))
 }
 
-fn load_toml_config_if_exists(path: &Path) -> Result<TomlValue, AppError> {
-    if !path.exists() {
-        return Ok(TomlValue::Table(toml::map::Map::new()));
-    }
-
-    let raw = fs::read_to_string(path).map_err(|source| AppError::ReadConfig {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    toml::from_str(&raw).map_err(|source| AppError::ParseTomlConfig {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
 fn build_crush_runtime_config(
     runtime_config_path: &Path,
     provider_name: &str,
-    launch: &ResolvedLaunch<'_>,
+    managed: &ManagedProviderLaunch<'_>,
 ) -> Result<JsonValue, AppError> {
     let source_config_path = source_crush_config_path()?;
     let mut root = load_json_config_if_exists(&source_config_path)?;
@@ -273,7 +247,7 @@ fn build_crush_runtime_config(
         root = JsonValue::Object(JsonMap::new());
     }
 
-    let generated = render_crush_config(provider_name, launch);
+    let generated = render_crush_config(provider_name, managed);
     merge_json_values(&mut root, generated);
 
     if runtime_config_path == source_config_path {
@@ -286,9 +260,9 @@ fn build_crush_runtime_config(
     Ok(root)
 }
 
-fn render_crush_config(provider_name: &str, launch: &ResolvedLaunch<'_>) -> JsonValue {
-    let base_url = base_url_for_launch(launch);
-    let provider_type = match launch.protocol {
+fn render_crush_config(provider_name: &str, managed: &ManagedProviderLaunch<'_>) -> JsonValue {
+    let base_url = base_url_for_managed_launch(managed);
+    let provider_type = match managed.protocol {
         Protocol::OpenaiChatCompletions | Protocol::OpenaiResponses => "openai-compat",
         Protocol::Anthropic => "anthropic",
     };
@@ -302,26 +276,29 @@ fn render_crush_config(provider_name: &str, launch: &ResolvedLaunch<'_>) -> Json
         "base_url".to_string(),
         JsonValue::String(base_url.to_string()),
     );
-    provider.insert("api_key".to_string(), JsonValue::String(launch.key.clone()));
+    provider.insert(
+        "api_key".to_string(),
+        JsonValue::String(managed.key.clone()),
+    );
     provider.insert(
         "models".to_string(),
         JsonValue::Array(vec![JsonValue::Object(JsonMap::from_iter([
-            ("id".to_string(), JsonValue::String(launch.model.clone())),
-            ("name".to_string(), JsonValue::String(launch.model.clone())),
+            ("id".to_string(), JsonValue::String(managed.model.clone())),
+            ("name".to_string(), JsonValue::String(managed.model.clone())),
         ]))]),
     );
 
-    let default_key = match launch.protocol {
+    let default_key = match managed.protocol {
         Protocol::Anthropic => "default_large_model_id",
         Protocol::OpenaiChatCompletions | Protocol::OpenaiResponses => "default_large_model_id",
     };
     provider.insert(
         default_key.to_string(),
-        JsonValue::String(launch.model.clone()),
+        JsonValue::String(managed.model.clone()),
     );
     provider.insert(
         "default_small_model_id".to_string(),
-        JsonValue::String(launch.model.clone()),
+        JsonValue::String(managed.model.clone()),
     );
 
     let mut providers = JsonMap::new();
@@ -358,23 +335,6 @@ fn merge_json_values(base: &mut JsonValue, overlay: JsonValue) {
                     merge_json_values(base_value, overlay_value);
                 } else {
                     base_map.insert(key, overlay_value);
-                }
-            }
-        }
-        (base_slot, overlay_value) => {
-            *base_slot = overlay_value;
-        }
-    }
-}
-
-fn merge_toml_values(base: &mut TomlValue, overlay: TomlValue) {
-    match (base, overlay) {
-        (TomlValue::Table(base_table), TomlValue::Table(overlay_table)) => {
-            for (key, overlay_value) in overlay_table {
-                if let Some(base_value) = base_table.get_mut(&key) {
-                    merge_toml_values(base_value, overlay_value);
-                } else {
-                    base_table.insert(key, overlay_value);
                 }
             }
         }
@@ -440,31 +400,8 @@ fn backup_if_exists(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-fn build_hermes_runtime_config(
-    runtime_config_path: &Path,
-    launch: &ResolvedLaunch<'_>,
-) -> Result<YamlValue, AppError> {
-    let source_config_path = source_hermes_config_path()?;
-    let mut root = load_yaml_config_if_exists(&source_config_path)?;
-    if !matches!(root, YamlValue::Mapping(_)) {
-        root = YamlValue::Mapping(YamlMapping::new());
-    }
-
-    let generated = render_hermes_config(&launch.model, launch);
-    merge_yaml_values(&mut root, generated);
-
-    if runtime_config_path == source_config_path {
-        return Err(AppError::Message(format!(
-            "refusing to overwrite existing Hermes config in place: {}",
-            runtime_config_path.display()
-        )));
-    }
-
-    Ok(root)
-}
-
-fn render_hermes_config(model: &str, launch: &ResolvedLaunch<'_>) -> YamlValue {
-    let base_url = base_url_for_launch(launch);
+fn render_hermes_config(model: &str, managed: &ManagedProviderLaunch<'_>) -> YamlValue {
+    let base_url = base_url_for_managed_launch(managed);
 
     let mut model_map = YamlMapping::new();
     model_map.insert(
@@ -488,51 +425,20 @@ fn render_hermes_config(model: &str, launch: &ResolvedLaunch<'_>) -> YamlValue {
     YamlValue::Mapping(root)
 }
 
-fn base_url_for_launch<'a>(launch: &'a ResolvedLaunch<'a>) -> &'a str {
-    match launch.protocol {
-        Protocol::OpenaiChatCompletions | Protocol::OpenaiResponses => launch
+fn base_url_for_managed_launch<'a>(managed: &'a ManagedProviderLaunch<'a>) -> &'a str {
+    match managed.protocol {
+        Protocol::OpenaiChatCompletions | Protocol::OpenaiResponses => managed
             .provider
             .base_urls
             .openai
             .as_deref()
             .expect("openai base URL checked before launch"),
-        Protocol::Anthropic => launch
+        Protocol::Anthropic => managed
             .provider
             .base_urls
             .anthropic
             .as_deref()
             .expect("anthropic base URL checked before launch"),
-    }
-}
-
-fn load_yaml_config_if_exists(path: &Path) -> Result<YamlValue, AppError> {
-    if !path.exists() {
-        return Ok(YamlValue::Mapping(YamlMapping::new()));
-    }
-    let raw = fs::read_to_string(path).map_err(|source| AppError::ReadConfig {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    serde_yaml::from_str(&raw).map_err(|source| AppError::ParseConfig {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-fn merge_yaml_values(base: &mut YamlValue, overlay: YamlValue) {
-    match (base, overlay) {
-        (YamlValue::Mapping(base_map), YamlValue::Mapping(overlay_map)) => {
-            for (key, overlay_value) in overlay_map {
-                if let Some(base_value) = base_map.get_mut(&key) {
-                    merge_yaml_values(base_value, overlay_value);
-                } else {
-                    base_map.insert(key, overlay_value);
-                }
-            }
-        }
-        (base_slot, overlay_value) => {
-            *base_slot = overlay_value;
-        }
     }
 }
 
@@ -545,7 +451,11 @@ fn spawn_and_wait(mut cmd: Command, program: &str) -> Result<ExitCode, AppError>
 }
 
 fn apply_extra_env(cmd: &mut Command, launch: &ResolvedLaunch<'_>) -> Result<(), AppError> {
-    for (key, template) in &launch.provider.extra_env {
+    let Some(managed) = launch.managed_provider.as_ref() else {
+        return Ok(());
+    };
+
+    for (key, template) in &managed.provider.extra_env {
         let value = expand_extra_env_value(key, template, launch)?;
         cmd.env(key, value);
     }
@@ -603,15 +513,93 @@ fn expand_extra_env_value(
 fn resolve_context_field(name: &str, launch: &ResolvedLaunch<'_>) -> Result<String, AppError> {
     match name {
         "provider" => Ok(launch.provider_name.to_string()),
-        "protocol" => Ok(protocol_name(launch.protocol).to_string()),
-        "model" => Ok(launch.model.clone()),
-        "key" => Ok(launch.key.clone()),
+        "protocol" => Ok(protocol_name(
+            launch
+                .managed_provider
+                .as_ref()
+                .ok_or_else(|| {
+                    AppError::Message(
+                        "context field `protocol` is unavailable without a resolved provider"
+                            .to_string(),
+                    )
+                })?
+                .protocol,
+        )
+        .to_string()),
+        "model" => Ok(launch
+            .managed_provider
+            .as_ref()
+            .ok_or_else(|| {
+                AppError::Message(
+                    "context field `model` is unavailable without a resolved provider".to_string(),
+                )
+            })?
+            .model
+            .clone()),
+        "key" => Ok(launch
+            .managed_provider
+            .as_ref()
+            .ok_or_else(|| {
+                AppError::Message(
+                    "context field `key` is unavailable without a resolved provider".to_string(),
+                )
+            })?
+            .key
+            .clone()),
         "agent" => Ok(agent_name(launch.agent).to_string()),
-        "base_url" => Ok(base_url_for_launch(launch).to_string()),
+        "base_url" => Ok(base_url_for_managed_launch(
+            launch.managed_provider.as_ref().ok_or_else(|| {
+                AppError::Message(
+                    "context field `base_url` is unavailable without a resolved provider"
+                        .to_string(),
+                )
+            })?,
+        )
+        .to_string()),
         other => Err(AppError::Message(format!(
             "unknown context field `{other}`; supported: provider, protocol, model, key, agent, base_url"
         ))),
     }
+}
+
+fn prepare_runtime_home(runtime_dir: &Path, agent_name: &str) -> Result<(), AppError> {
+    if runtime_dir.exists() {
+        fs::remove_dir_all(runtime_dir).map_err(AppError::TempDir)?;
+    }
+    fs::create_dir_all(runtime_dir).map_err(AppError::TempDir)?;
+    copy_skeleton_into(runtime_dir, agent_name)
+}
+
+fn copy_skeleton_into(runtime_dir: &Path, agent_name: &str) -> Result<(), AppError> {
+    let skeleton_dir = skeleton_dir(agent_name)?;
+    if !skeleton_dir.exists() {
+        return Ok(());
+    }
+    copy_dir_contents(&skeleton_dir, runtime_dir)
+}
+
+fn copy_dir_contents(source: &Path, destination: &Path) -> Result<(), AppError> {
+    for entry in fs::read_dir(source).map_err(AppError::TempDir)? {
+        let entry = entry.map_err(AppError::TempDir)?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().map_err(AppError::TempDir)?;
+        if file_type.is_dir() {
+            fs::create_dir_all(&destination_path).map_err(AppError::TempDir)?;
+            copy_dir_contents(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = destination_path.parent() {
+                fs::create_dir_all(parent).map_err(AppError::TempDir)?;
+            }
+            fs::copy(&source_path, &destination_path).map_err(|source| {
+                AppError::WriteTempConfig {
+                    path: destination_path.clone(),
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn sanitize_name(name: &str) -> String {

@@ -52,13 +52,14 @@ The provider config stays generic; each agent adapter is responsible for mapping
 
 - protocol: `openai-responses`
 - launch mode: temporary `CODEX_HOME` and generated `config.toml`
-- merges existing Codex config into the runtime config
+- does not read or merge any existing Codex home/config
 
 ### Hermes Agent
 
 - protocol: `openai-chat-completions`
 - launch mode: temporary `HERMES_HOME` and generated `config.yaml`
 - injects API key via environment variable
+- does not read or merge any existing Hermes home/config
 
 ### Crush
 
@@ -107,6 +108,12 @@ providers:
     default_model: kimi-for-coding
     models:
       - kimi-for-coding
+
+isolated_homes:
+  codex:
+    sandbox: {}
+  hermes:
+    sandbox: {}
 ```
 
 See [config.demo.yaml](config.demo.yaml) for a fuller example.
@@ -146,6 +153,7 @@ Launch Codex:
 ```bash
 agent-run launch ollama codex
 agent-run launch openrouter --model openai/gpt-5.3-codex codex
+agent-run launch sandbox codex
 ```
 
 Launch Hermes:
@@ -153,7 +161,16 @@ Launch Hermes:
 ```bash
 agent-run launch deepseek hermes
 agent-run launch ollama hermes
+agent-run launch sandbox hermes
 ```
+
+`isolated_homes` notes:
+
+- `isolated_homes.codex.<name>` and `isolated_homes.hermes.<name>` allow launching that agent with an isolated runtime home even when no provider exists.
+- Entries are empty objects today. They do not accept `key`, `base_url`, `model`, or custom paths.
+- When both a provider and an isolated home entry share the same name, agent-run combines them: isolated runtime home plus provider-derived runtime config.
+- Runtime homes are rebuilt from scratch on each launch. agent-run never copies or merges your existing `CODEX_HOME` or `HERMES_HOME`.
+- Optional skeleton files are copied from `~/.config/agent-run/skel/<agent>/` before agent-run writes any generated runtime config.
 
 Launch Crush:
 

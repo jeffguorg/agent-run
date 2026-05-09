@@ -92,3 +92,9 @@ providers:
     models:
       - openai/gpt-oss-20b
       - ibm/granite-4-micro
+
+isolated_homes:
+  codex:
+    sandbox: {}
+  hermes:
+    sandbox: {}

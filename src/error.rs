@@ -84,12 +84,6 @@ pub enum AppError {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse TOML config from {path}: {source}")]
-    ParseTomlConfig {
-        path: PathBuf,
-        #[source]
-        source: toml::de::Error,
-    },
     #[error("failed to serialize TOML config for {path}: {source}")]
     SerializeTomlConfig {
         path: PathBuf,

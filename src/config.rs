@@ -17,6 +17,8 @@ const DEMO_CONFIG: &str = include_str!("../config.demo.yaml");
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub providers: BTreeMap<String, ProviderConfig>,
+    #[serde(default, alias = "isolated-homes")]
+    pub isolated_homes: IsolatedHomesConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +49,17 @@ impl ProviderConfig {
         }
     }
 }
+
+#[derive(Debug, Default, Deserialize)]
+pub struct IsolatedHomesConfig {
+    #[serde(default)]
+    pub codex: BTreeMap<String, IsolatedHomeConfig>,
+    #[serde(default)]
+    pub hermes: BTreeMap<String, IsolatedHomeConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct IsolatedHomeConfig {}
 
 #[derive(Debug, Deserialize)]
 pub struct BaseUrls {
@@ -137,15 +150,14 @@ pub fn cache_dir() -> Result<PathBuf, AppError> {
     Ok(PathBuf::from(home).join(".cache"))
 }
 
-pub fn source_codex_config_path() -> Result<PathBuf, AppError> {
-    if let Ok(codex_home) = env::var("CODEX_HOME") {
-        return Ok(PathBuf::from(codex_home).join("config.toml"));
-    }
-
-    let home = env::var("HOME").map_err(|_| {
-        AppError::Message("cannot resolve Codex config path: HOME is not set".to_string())
-    })?;
-    Ok(PathBuf::from(home).join(".codex").join("config.toml"))
+pub fn skeleton_dir(agent_name: &str) -> Result<PathBuf, AppError> {
+    Ok(config_path()?
+        .parent()
+        .ok_or_else(|| {
+            AppError::Message("cannot resolve agent-run skeleton directory".to_string())
+        })?
+        .join("skel")
+        .join(agent_name))
 }
 
 pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
@@ -160,21 +172,6 @@ pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
         .join(".config")
         .join("crush")
         .join("crush.json"))
-}
-
-pub fn source_hermes_home() -> Result<PathBuf, AppError> {
-    if let Ok(path) = env::var("HERMES_HOME") {
-        return Ok(PathBuf::from(path));
-    }
-
-    let home = env::var("HOME").map_err(|_| {
-        AppError::Message("cannot resolve Hermes home path: HOME is not set".to_string())
-    })?;
-    Ok(PathBuf::from(home).join(".hermes"))
-}
-
-pub fn source_hermes_config_path() -> Result<PathBuf, AppError> {
-    Ok(source_hermes_home()?.join("config.yaml"))
 }
 
 pub fn source_claude_state_path() -> Result<PathBuf, AppError> {

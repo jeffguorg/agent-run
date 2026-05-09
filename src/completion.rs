@@ -55,14 +55,36 @@ pub fn provider_candidates() -> Vec<CompletionCandidate> {
         return Vec::new();
     };
 
-    config
-        .providers
-        .iter()
-        .map(|(provider, config)| {
+    let mut seen = BTreeSet::new();
+    let mut candidates = Vec::new();
+
+    for (provider, config) in &config.providers {
+        seen.insert(provider.clone());
+        candidates.push(
             labeled_candidate(provider.clone(), &provider_help(config), 0)
-                .id(Some(format!("provider:{provider}")))
-        })
-        .collect()
+                .id(Some(format!("provider:{provider}"))),
+        );
+    }
+
+    for name in config.isolated_homes.codex.keys() {
+        if seen.insert(name.clone()) {
+            candidates.push(
+                labeled_candidate(name.clone(), "[codex isolated home]", 1)
+                    .id(Some(format!("isolated:codex:{name}"))),
+            );
+        }
+    }
+
+    for name in config.isolated_homes.hermes.keys() {
+        if seen.insert(name.clone()) {
+            candidates.push(
+                labeled_candidate(name.clone(), "[hermes isolated home]", 1)
+                    .id(Some(format!("isolated:hermes:{name}"))),
+            );
+        }
+    }
+
+    candidates
 }
 
 pub fn complete_models_for_current_provider(current: &OsStr) -> Vec<CompletionCandidate> {
