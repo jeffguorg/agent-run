@@ -12,6 +12,25 @@ use crate::error::AppError;
 use crate::model::{ModelApiFilterConfig, RawModelConfig};
 use crate::protocol::Protocol;
 
+#[cfg(unix)]
+mod unix_platform {
+    pub const HOME_ENV: &str = "HOME";
+    pub const CACHE_HOME_ENV: &str = "XDG_CACHE_HOME";
+    pub const DEFAULT_EDITOR: &str = "vi";
+}
+
+#[cfg(windows)]
+mod windows_platform {
+    pub const HOME_ENV: &str = "USERPROFILE";
+    pub const CACHE_HOME_ENV: &str = "TEMP";
+    pub const DEFAULT_EDITOR: &str = "notepad.exe";
+}
+
+#[cfg(unix)]
+use unix_platform as current_platform;
+#[cfg(windows)]
+use windows_platform as current_platform;
+
 const DEMO_CONFIG: &str = include_str!("../config.demo.yaml");
 
 #[derive(Debug, Deserialize)]
@@ -101,7 +120,7 @@ pub fn run_config(bootstrap_config: bool) -> Result<ExitCode, AppError> {
         write_demo_config(&path)?;
     }
 
-    let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let editor = env::var("EDITOR").unwrap_or_else(|_| current_platform::DEFAULT_EDITOR.to_string());
     let status = Command::new(&editor)
         .arg(&path)
         .status()
@@ -131,8 +150,11 @@ pub fn config_path() -> Result<PathBuf, AppError> {
             .join("config.yaml"));
     }
 
-    let home = env::var("HOME").map_err(|_| {
-        AppError::Message("cannot resolve config path: HOME is not set".to_string())
+    let home = env::var(current_platform::HOME_ENV).map_err(|_| {
+        AppError::Message(format!(
+            "cannot resolve config path: {} is not set",
+            current_platform::HOME_ENV
+        ))
     })?;
     Ok(PathBuf::from(home)
         .join(".config")
@@ -141,13 +163,28 @@ pub fn config_path() -> Result<PathBuf, AppError> {
 }
 
 pub fn cache_dir() -> Result<PathBuf, AppError> {
-    if let Ok(path) = env::var("XDG_CACHE_HOME") {
+    if let Ok(path) = env::var(current_platform::CACHE_HOME_ENV) {
         return Ok(PathBuf::from(path));
     }
 
-    let home = env::var("HOME")
-        .map_err(|_| AppError::Message("cannot resolve cache path: HOME is not set".to_string()))?;
-    Ok(PathBuf::from(home).join(".cache"))
+    #[cfg(unix)]
+    {
+        let home = env::var(current_platform::HOME_ENV).map_err(|_| {
+            AppError::Message(format!(
+                "cannot resolve cache path: {} is not set",
+                current_platform::HOME_ENV
+            ))
+        })?;
+        Ok(PathBuf::from(home).join(".cache"))
+    }
+
+    #[cfg(windows)]
+    {
+        Err(AppError::Message(format!(
+            "cannot resolve cache path: {} is not set",
+            current_platform::CACHE_HOME_ENV
+        )))
+    }
 }
 
 pub fn skeleton_dir(agent_name: &str) -> Result<PathBuf, AppError> {
@@ -165,8 +202,11 @@ pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
         return Ok(PathBuf::from(path).join("crush.json"));
     }
 
-    let home = env::var("HOME").map_err(|_| {
-        AppError::Message("cannot resolve Crush config path: HOME is not set".to_string())
+    let home = env::var(current_platform::HOME_ENV).map_err(|_| {
+        AppError::Message(format!(
+            "cannot resolve Crush config path: {} is not set",
+            current_platform::HOME_ENV
+        ))
     })?;
     Ok(PathBuf::from(home)
         .join(".config")
@@ -175,8 +215,11 @@ pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
 }
 
 pub fn source_claude_state_path() -> Result<PathBuf, AppError> {
-    let home = env::var("HOME").map_err(|_| {
-        AppError::Message("cannot resolve Claude state path: HOME is not set".to_string())
+    let home = env::var(current_platform::HOME_ENV).map_err(|_| {
+        AppError::Message(format!(
+            "cannot resolve Claude state path: {} is not set",
+            current_platform::HOME_ENV
+        ))
     })?;
     Ok(PathBuf::from(home).join(".claude.json"))
 }
