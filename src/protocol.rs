@@ -51,6 +51,9 @@ pub fn resolve_key(provider: &ProviderConfig) -> Result<String, AppError> {
         let program = cmd[0].clone();
         let output = std::process::Command::new(&program)
             .args(&cmd[1..])
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
             .output()
             .map_err(|source| AppError::RunKeyCommand {
                 command: cmd.join(" "),
