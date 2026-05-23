@@ -24,6 +24,7 @@ pub enum Commands {
     Completion(CompletionArgs),
     Models(ModelsArgs),
     Version,
+    Statusline(StatuslineArgs),
 }
 
 #[derive(Args, Debug)]
@@ -74,6 +75,12 @@ pub struct ModelsListArgs {
     pub all: bool,
     #[arg(required_unless_present = "all")]
     pub provider: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct StatuslineArgs {
+    #[arg(long)]
+    pub no_cache: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

@@ -6,6 +6,7 @@ mod config;
 mod error;
 mod model;
 mod protocol;
+mod statusline;
 
 use std::process::ExitCode;
 
@@ -47,6 +48,7 @@ fn run() -> Result<ExitCode, AppError> {
             print_version();
             Ok(ExitCode::SUCCESS)
         }
+        Commands::Statusline(args) => statusline::run_statusline(args.no_cache),
         Commands::Launch(args) => {
             let force = ForceScopeSet::from_scope(args.force);
             let config_path = config_path()?;

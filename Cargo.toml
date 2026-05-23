@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
+mlua = { version = "0.10", features = ["lua54", "vendored"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 regex = "1.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -15,6 +16,7 @@ thiserror = "2.0.17"
 toml = "0.9.8"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+url = "2"
 
 [build-dependencies]
 time = { version = "0.3", default-features = false, features = ["std"] }

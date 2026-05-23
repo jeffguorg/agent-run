@@ -90,4 +90,10 @@ pub enum AppError {
         #[source]
         source: toml::ser::Error,
     },
+    #[error("statusline: failed to read stdin: {0}")]
+    StatuslineStdin(String),
+    #[error("statusline: invalid JSON on stdin")]
+    StatuslineJson(#[source] serde_json::Error),
+    #[error("statusline: lua error for provider `{provider}`: {message}")]
+    StatuslineLua { provider: String, message: String },
 }
