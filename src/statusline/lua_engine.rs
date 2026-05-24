@@ -474,6 +474,82 @@ fn execute_and_inject_commands(lua: &Lua, ctx: &Table, cmds: &Table) -> Result<(
     Ok(())
 }
 
+pub fn run_quota_check() -> Result<Option<u64>, AppError> {
+    let lua = Lua::new();
+
+    let accessed: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    inject_bridges(&lua, accessed.clone()).map_err(|e| lua_err!("bridge", e))?;
+    load_util(&lua)?;
+
+    let scripts = discover_scripts()?;
+    let stdin_data = serde_json::Value::Object(serde_json::Map::new());
+    let ctx = build_context_table(&lua, &stdin_data, accessed.clone())?;
+
+    let mut min_reset_in: Option<u64> = None;
+
+    for (_, filename, lua_code) in &scripts {
+        let module: Table = match lua.load(lua_code).set_name(filename).eval() {
+            Ok(t) => t,
+            Err(e) => {
+                debug!("{filename}: load failed in quota check: {e}");
+                continue;
+            }
+        };
+
+        let matcher_fn: mlua::Function = match module.get("matcher") {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        let matched: bool = match matcher_fn.call(ctx.clone()) {
+            Ok(Value::Boolean(b)) => b,
+            _ => continue,
+        };
+
+        if !matched {
+            continue;
+        }
+
+        let quota_fn: mlua::Function = match module.get("subscription_quota_usage") {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        match quota_fn.call::<Option<Table>>((Value::Nil, ctx.clone())) {
+            Ok(Some(windows)) => {
+                for window in windows.sequence_values::<Table>() {
+                    match window {
+                        Ok(w) => {
+                            let used: f64 = w.get("used").unwrap_or(0.0);
+                            let total: f64 = w.get("total").unwrap_or(1.0);
+                            if total > 0.0 && used / total >= 0.995 {
+                                if let Ok(reset_in) = w.get::<f64>("reset_in") {
+                                    if reset_in > 0.0 {
+                                        let secs = reset_in.ceil() as u64;
+                                        min_reset_in = Some(
+                                            min_reset_in.map_or(secs, |m| m.min(secs)),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug!("{filename}: quota window parse error: {e}");
+                        }
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                debug!("{filename}: subscription_quota_usage error: {e}");
+            }
+        }
+    }
+
+    debug!("env vars accessed by quota check: {:?}", accessed.borrow());
+    Ok(min_reset_in)
+}
+
 fn json_to_lua(lua: &Lua, val: &JsonValue) -> mlua::Result<Value> {
     match val {
         JsonValue::Null => Ok(Value::Nil),

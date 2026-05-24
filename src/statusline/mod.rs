@@ -7,7 +7,7 @@ use crate::error::AppError;
 
 mod cache;
 mod context;
-mod lua_engine;
+pub mod lua_engine;
 
 pub fn run_statusline(no_cache: bool) -> Result<ExitCode, AppError> {
     let mut raw = String::new();

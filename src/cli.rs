@@ -25,6 +25,7 @@ pub enum Commands {
     Models(ModelsArgs),
     Version,
     Statusline(StatuslineArgs),
+    ClaudeCodeHook(ClaudeCodeHookArgs),
 }
 
 #[derive(Args, Debug)]
@@ -81,6 +82,25 @@ pub struct ModelsListArgs {
 pub struct StatuslineArgs {
     #[arg(long)]
     pub no_cache: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ClaudeCodeHookArgs {
+    #[command(subcommand)]
+    pub command: ClaudeCodeHookCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ClaudeCodeHookCommands {
+    StopFailure(StopFailureHookArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct StopFailureHookArgs {
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long, value_name = "SECS")]
+    pub unknown_error_rewake_in_secs: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

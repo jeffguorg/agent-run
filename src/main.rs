@@ -4,6 +4,7 @@ mod cli;
 mod completion;
 mod config;
 mod error;
+mod hook;
 mod model;
 mod protocol;
 mod statusline;
@@ -12,7 +13,7 @@ use std::process::ExitCode;
 
 use agent::{ManagedProviderLaunch, ResolvedLaunch, launch, preferred_protocols};
 use catalog::{RemoteLoadMode, collect_provider_model_catalog, load_remote_models_for_protocol};
-use cli::{Commands, ForceScopeSet, ModelsCommands, agent_name};
+use cli::{ClaudeCodeHookCommands, Commands, ForceScopeSet, ModelsCommands, agent_name};
 use completion::{enable_dynamic_completion, print_completion};
 use config::{AppConfig, ProviderConfig, config_path, load_config, run_config};
 use error::AppError;
@@ -49,6 +50,11 @@ fn run() -> Result<ExitCode, AppError> {
             Ok(ExitCode::SUCCESS)
         }
         Commands::Statusline(args) => statusline::run_statusline(args.no_cache),
+        Commands::ClaudeCodeHook(args) => match args.command {
+            ClaudeCodeHookCommands::StopFailure(args) => {
+                hook::run_stop_failure(args.dry_run, args.unknown_error_rewake_in_secs)
+            }
+        },
         Commands::Launch(args) => {
             let force = ForceScopeSet::from_scope(args.force);
             let config_path = config_path()?;

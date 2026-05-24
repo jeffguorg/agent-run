@@ -53,7 +53,7 @@ function M._days_since_epoch(y, m, d)
         - math.floor(y1 / 100) + math.floor(y1 / 400) - 2472633
 end
 
-function M.build_summary(slots)
+function M.build_summary(slots, prefix)
     local parts = {}
     for _, slot in ipairs(slots) do
         if slot.countdown then
@@ -62,7 +62,9 @@ function M.build_summary(slots)
             table.insert(parts, string.format("%s %s", slot.label, slot.value))
         end
     end
-    return table.concat(parts, " ")
+    local body = table.concat(parts, " ")
+    if prefix then return prefix .. " " .. body end
+    return body
 end
 
 function M.kimi_window_seconds(window)
