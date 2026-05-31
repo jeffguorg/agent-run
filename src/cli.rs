@@ -109,6 +109,8 @@ pub struct StopFailureHookArgs {
     pub dry_run: bool,
     #[arg(long, value_name = "SECS")]
     pub unknown_error_rewake_in_secs: Option<u64>,
+    #[arg(long, value_name = "SECS", default_value_t = 30)]
+    pub recheck_interval_seconds: u64,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

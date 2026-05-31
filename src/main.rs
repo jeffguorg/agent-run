@@ -52,7 +52,7 @@ fn run() -> Result<ExitCode, AppError> {
         Commands::Statusline(args) => statusline::run_statusline(args.no_cache),
         Commands::ClaudeCodeHook(args) => match args.command {
             ClaudeCodeHookCommands::StopFailure(args) => {
-                hook::run_stop_failure(args.dry_run, args.unknown_error_rewake_in_secs)
+                hook::run_stop_failure(args.dry_run, args.unknown_error_rewake_in_secs, args.recheck_interval_seconds)
             }
         },
         Commands::Launch(args) => {
