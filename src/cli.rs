@@ -26,6 +26,7 @@ pub enum Commands {
     Version,
     Statusline(StatuslineArgs),
     ClaudeCodeHook(ClaudeCodeHookArgs),
+    ExportEnv(ExportEnvArgs),
 }
 
 #[derive(Args, Debug)]
@@ -90,6 +91,13 @@ pub struct ClaudeCodeHookArgs {
     pub command: ClaudeCodeHookCommands,
 }
 
+#[derive(Args, Debug)]
+pub struct ExportEnvArgs {
+    pub provider: String,
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum ClaudeCodeHookCommands {
     StopFailure(StopFailureHookArgs),
@@ -116,6 +124,7 @@ pub enum Agent {
     Codex,
     Hermes,
     Crush,
+    Shell,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -159,6 +168,7 @@ pub fn agent_name(agent: Agent) -> &'static str {
         Agent::Codex => "codex",
         Agent::Hermes => "hermes",
         Agent::Crush => "crush",
+        Agent::Shell => "shell",
     }
 }
 

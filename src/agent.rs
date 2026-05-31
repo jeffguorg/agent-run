@@ -35,6 +35,7 @@ pub fn preferred_protocols(agent: Agent) -> &'static [Protocol] {
         Agent::Codex => &[Protocol::OpenaiResponses],
         Agent::Hermes => &[Protocol::OpenaiChatCompletions],
         Agent::Crush => &[Protocol::OpenaiChatCompletions, Protocol::Anthropic],
+        Agent::Shell => &[Protocol::Anthropic, Protocol::OpenaiChatCompletions, Protocol::OpenaiResponses],
     }
 }
 
@@ -44,6 +45,7 @@ pub fn launch(agent: Agent, launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppE
         Agent::Codex => launch_codex(launch),
         Agent::Hermes => launch_hermes(launch),
         Agent::Crush => launch_crush(launch),
+        Agent::Shell => launch_shell(launch),
     }
 }
 
@@ -609,4 +611,86 @@ fn sanitize_name(name: &str) -> String {
             _ => '_',
         })
         .collect()
+}
+
+/// Collect env var key-value pairs for the "set everything" pattern used by
+/// `launch shell` and `export-env`.
+pub fn collect_shell_env(launch: &ResolvedLaunch<'_>) -> Result<Vec<(String, String)>, AppError> {
+    let managed = launch.managed_provider.as_ref().ok_or_else(|| {
+        AppError::Message("shell env requires a resolved provider".to_string())
+    })?;
+    let provider = managed.provider;
+    let mut envs = Vec::new();
+
+    // Base URLs for both protocol families
+    if let Some(url) = provider.base_urls.anthropic.as_deref() {
+        envs.push(("ANTHROPIC_BASE_URL".to_string(), url.to_string()));
+    }
+    if let Some(url) = provider.base_urls.openai.as_deref() {
+        envs.push(("OPENAI_BASE_URL".to_string(), url.to_string()));
+    }
+
+    // API keys based on provider config
+    if provider.anthropic_use_api_key {
+        envs.push(("ANTHROPIC_API_KEY".to_string(), managed.key.clone()));
+    } else {
+        envs.push(("ANTHROPIC_AUTH_TOKEN".to_string(), managed.key.clone()));
+    }
+    envs.push(("OPENAI_API_KEY".to_string(), managed.key.clone()));
+
+    // Model env vars
+    envs.push(("ANTHROPIC_MODEL".to_string(), managed.model.clone()));
+    envs.push(("OPENAI_MODEL".to_string(), managed.model.clone()));
+
+    // Extra env from provider config
+    for (key, template) in &provider.extra_env {
+        let value = expand_extra_env_value(key, template, launch)?;
+        envs.push((key.clone(), value));
+    }
+
+    Ok(envs)
+}
+
+/// Escape a value for shell single-quoting: wrap in `'…'`, escaping embedded `'` as `'\''`.
+pub fn shell_escape(s: &str) -> String {
+    let escaped = s.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+fn launch_shell(launch: ResolvedLaunch<'_>) -> Result<ExitCode, AppError> {
+    launch.managed_provider.as_ref().ok_or_else(|| {
+        AppError::Message("shell launch requires a resolved provider".to_string())
+    })?;
+
+    // Determine shell path: use $SHELL unless first arg looks like a shell path (contains /)
+    // or is a known shell name without leading dash
+    let (shell_path, shell_exec_args) = if launch.agent_args.is_empty() {
+        let shell = env::var("SHELL").map_err(|_| {
+            AppError::Message("SHELL env var is not set; pass the shell explicitly".to_string())
+        })?;
+        (shell, vec![])
+    } else if launch.agent_args[0].contains('/') || !launch.agent_args[0].starts_with('-') {
+        (launch.agent_args[0].clone(), launch.agent_args[1..].to_vec())
+    } else {
+        let shell = env::var("SHELL").map_err(|_| {
+            AppError::Message("SHELL env var is not set; pass the shell explicitly".to_string())
+        })?;
+        (shell, launch.agent_args.clone())
+    };
+
+    let mut cmd = Command::new(&shell_path);
+    cmd.args(&shell_exec_args);
+
+    // Clear stale values from parent environment before setting new ones
+    cmd.env_remove("ANTHROPIC_API_KEY");
+    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
+    cmd.env_remove("ANTHROPIC_BASE_URL");
+    cmd.env_remove("OPENAI_API_KEY");
+    cmd.env_remove("OPENAI_BASE_URL");
+
+    for (key, value) in collect_shell_env(&launch)? {
+        cmd.env(key, value);
+    }
+
+    spawn_and_wait(cmd, &shell_path)
 }

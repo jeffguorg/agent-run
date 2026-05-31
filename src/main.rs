@@ -11,7 +11,7 @@ mod statusline;
 
 use std::process::ExitCode;
 
-use agent::{ManagedProviderLaunch, ResolvedLaunch, launch, preferred_protocols};
+use agent::{ManagedProviderLaunch, ResolvedLaunch, collect_shell_env, launch, preferred_protocols, shell_escape};
 use catalog::{RemoteLoadMode, collect_provider_model_catalog, load_remote_models_for_protocol};
 use cli::{ClaudeCodeHookCommands, Commands, ForceScopeSet, ModelsCommands, agent_name};
 use completion::{enable_dynamic_completion, print_completion};
@@ -103,6 +103,7 @@ fn run() -> Result<ExitCode, AppError> {
 
             launch(args.agent, launch_spec)
         }
+        Commands::ExportEnv(args) => run_export_env(args.provider, args.model),
     }
 }
 
@@ -162,7 +163,7 @@ fn has_isolated_home(config: &AppConfig, agent: cli::Agent, name: &str) -> bool 
     match agent {
         cli::Agent::Codex => config.isolated_homes.codex.contains_key(name),
         cli::Agent::Hermes => config.isolated_homes.hermes.contains_key(name),
-        cli::Agent::Claude | cli::Agent::Crush => false,
+        cli::Agent::Claude | cli::Agent::Crush | cli::Agent::Shell => false,
     }
 }
 
@@ -179,8 +180,13 @@ fn missing_launch_target_error(config: &AppConfig, name: &str, agent: cli::Agent
     }
 
     let isolated_key = agent_name(agent);
+    let hint = if supports_isolated_home(agent) {
+        format!("; define `providers.{name}` or `isolated_homes.{isolated_key}.{name}`")
+    } else {
+        format!("; define `providers.{name}`")
+    };
     AppError::Message(format!(
-        "unknown launch target `{name}` for agent `{isolated_key}`; define `providers.{name}` or `isolated_homes.{isolated_key}.{name}`"
+        "unknown launch target `{name}` for agent `{isolated_key}`{hint}"
     ))
 }
 
@@ -245,6 +251,31 @@ fn resolve_managed_provider_launch<'a>(
         key,
         model: selected_model,
     })
+}
+
+fn run_export_env(provider_name: String, requested_model: Option<String>) -> Result<ExitCode, AppError> {
+    let config_path = config_path()?;
+    let config = load_config(&config_path)?;
+    let provider = config.providers.get(&provider_name).ok_or_else(|| {
+        AppError::Message(format!("unknown provider `{provider_name}`"))
+    })?;
+    let managed = resolve_managed_provider_launch(
+        &provider_name,
+        provider,
+        cli::Agent::Shell,
+        requested_model.as_deref(),
+        ForceScopeSet::default(),
+    )?;
+    let launch = ResolvedLaunch {
+        agent: cli::Agent::Shell,
+        provider_name: &provider_name,
+        managed_provider: Some(managed),
+        agent_args: vec![],
+    };
+    for (key, value) in collect_shell_env(&launch)? {
+        println!("export {key}={}", shell_escape(&value));
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn run_models_command(command: ModelsCommands) -> Result<ExitCode, AppError> {
