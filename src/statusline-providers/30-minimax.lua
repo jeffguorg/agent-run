@@ -50,25 +50,41 @@ function M.subscription_quota_usage(_, ctx)
     if not target then return nil end
 
     local result = {}
+    -- Each row: { total_field, used_field, start_field, end_field, remaining_percent_field }.
+    -- Some entries (e.g. `general`) don't populate the count fields, so fall back to
+    -- the percent field with total=100.
     local intervals = {
-        { "current_interval_total_count", "current_interval_usage_count", "start_time", "end_time" },
-        { "current_weekly_total_count",   "current_weekly_usage_count",   "weekly_start_time", "weekly_end_time" },
+        { "current_interval_total_count", "current_interval_usage_count", "start_time",            "end_time",            "current_interval_remaining_percent" },
+        { "current_weekly_total_count",   "current_weekly_usage_count",   "weekly_start_time",     "weekly_end_time",     "current_weekly_remaining_percent" },
     }
 
     for _, intv in ipairs(intervals) do
-        local total     = tonumber(target[intv[1]]) or 0
-        local used      = tonumber(target[intv[2]]) or 0
-        local start_t   = tonumber(target[intv[3]]) or 0
-        local end_t     = tonumber(target[intv[4]]) or 0
-        if total > 0 and end_t > start_t then
-            local reset_in = nil
-            if end_t > 0 then reset_in = end_t / 1000.0 - now end
-            result[#result + 1] = {
-                window = math.floor((end_t - start_t) / 1000),
-                reset_in = reset_in,
-                total = total,
-                used = used,
-            }
+        local start_t  = tonumber(target[intv[3]]) or 0
+        local end_t    = tonumber(target[intv[4]]) or 0
+        if end_t > start_t then
+            local total, used = nil, nil
+            local total_raw = tonumber(target[intv[1]])
+            local used_raw  = tonumber(target[intv[2]])
+            if total_raw and total_raw > 0 then
+                total, used = total_raw, used_raw or 0
+            else
+                local remaining = tonumber(target[intv[5]])
+                if remaining and remaining >= 0 and remaining <= 100 then
+                    total = 100
+                    used = math.floor(100 - remaining + 0.5)
+                end
+            end
+
+            if total and total > 0 then
+                local reset_in = nil
+                if end_t > 0 then reset_in = end_t / 1000.0 - now end
+                result[#result + 1] = {
+                    window = math.floor((end_t - start_t) / 1000),
+                    reset_in = reset_in,
+                    total = total,
+                    used = used,
+                }
+            end
         end
     end
     if #result == 0 then return nil end
@@ -87,15 +103,21 @@ function M.statusline_part(_, ctx)
     for _, w in ipairs(windows) do
         local slot = util.format_duration(w.window)
         if slot then
-            local countdown = nil
-            if w.reset_in and w.reset_in > 0 then
-                countdown = util.format_countdown(w.reset_in)
+            local pct = 0
+            if w.total and w.total > 0 then
+                pct = math.floor(w.used / w.total * 100 + 0.5)
             end
-            slots[#slots + 1] = {
-                label = slot,
-                value = string.format("%d/%d", w.used, w.total),
-                countdown = countdown,
-            }
+            if pct > 0 then
+                local countdown = nil
+                if w.reset_in and w.reset_in > 0 then
+                    countdown = util.format_countdown(w.reset_in)
+                end
+                slots[#slots + 1] = {
+                    label = slot,
+                    value = string.format("%d%%", pct),
+                    countdown = countdown,
+                }
+            end
         end
     end
 
