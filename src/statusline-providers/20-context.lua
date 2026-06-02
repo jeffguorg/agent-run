@@ -1,14 +1,17 @@
 -- Context window usage display.
 local M = {}
 
-function M.matcher(ctx)
-    local cw = (ctx.stdin or {}).context_window
-    return cw ~= nil and cw.used_percentage ~= nil
+function M.matcher(_)
+    return true
 end
 
 function M.statusline_part(_, ctx)
-    local pct = ctx.stdin.context_window.used_percentage
-    return string.format(" | ctx %s%%", pct)
+    local cw = (ctx.stdin or {}).context_window
+    local pct = cw and cw.used_percentage
+    if pct == nil then
+        return " | ctx used ...%"
+    end
+    return string.format(" | ctx used %3.0f%%", pct)
 end
 
 return M
