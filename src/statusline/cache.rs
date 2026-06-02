@@ -11,12 +11,14 @@ const CACHE_TTL_SECS: u64 = 60;
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheEntry {
     output: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    colored_output: Option<String>,
     env_snapshot: std::collections::BTreeMap<String, String>,
     timestamp: u64,
 }
 
 pub enum CacheResult {
-    Hit(String),
+    Hit { output: String, colored_output: Option<String> },
     Miss,
 }
 
@@ -83,10 +85,18 @@ pub fn cache_check(key: &str, env_depends: &[String], no_cache: bool) -> CacheRe
     }
 
     debug!("cache: {key} hit (age={}s)", age);
-    CacheResult::Hit(entry.output)
+    CacheResult::Hit {
+        output: entry.output,
+        colored_output: entry.colored_output,
+    }
 }
 
-pub fn cache_write(key: &str, output: &str, env_depends: &[String]) {
+pub fn cache_write(
+    key: &str,
+    output: &str,
+    colored_output: Option<&str>,
+    env_depends: &[String],
+) {
     let path = cache_path(key);
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -104,6 +114,7 @@ pub fn cache_write(key: &str, output: &str, env_depends: &[String]) {
 
     let entry = CacheEntry {
         output: output.to_string(),
+        colored_output: colored_output.map(String::from),
         env_snapshot,
         timestamp: current_epoch_secs(),
     };
