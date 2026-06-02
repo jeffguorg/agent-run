@@ -42,7 +42,7 @@ function M.subscription_quota_usage(_, ctx)
 
     local target = nil
     for _, entry in ipairs(data.model_remains or {}) do
-        if entry.model_name and entry.model_name:find("^MiniMax%-M") then
+        if entry.model_name == "general" then
             target = entry
             break
         end
@@ -54,24 +54,23 @@ function M.subscription_quota_usage(_, ctx)
         { "current_interval_total_count", "current_interval_usage_count", "start_time", "end_time" },
         { "current_weekly_total_count",   "current_weekly_usage_count",   "weekly_start_time", "weekly_end_time" },
     }
+
     for _, intv in ipairs(intervals) do
         local total     = tonumber(target[intv[1]]) or 0
         local used      = tonumber(target[intv[2]]) or 0
         local start_t   = tonumber(target[intv[3]]) or 0
         local end_t     = tonumber(target[intv[4]]) or 0
         if total > 0 and end_t > start_t then
-            local window_secs = math.floor((end_t - start_t) / 1000)
             local reset_in = nil
             if end_t > 0 then reset_in = end_t / 1000.0 - now end
             result[#result + 1] = {
-                window = window_secs,
+                window = math.floor((end_t - start_t) / 1000),
                 reset_in = reset_in,
                 total = total,
                 used = used,
             }
         end
     end
-
     if #result == 0 then return nil end
     return result
 end
