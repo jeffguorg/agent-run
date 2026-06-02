@@ -256,6 +256,20 @@ fn inject_bridges(lua: &Lua, _accessed: Rc<RefCell<Vec<String>>>) -> Result<(), 
     })?;
     globals.set("regex_find", regex_find_fn)?;
 
+    // log(level, message) — bridge tracing to Lua. Level is one of
+    // "debug" | "info" | "warn" | "error"; unknown levels map to info.
+    let log_fn = lua.create_function(|_, (level, message): (String, String)| {
+        match level.as_str() {
+            "debug" => tracing::debug!("[lua] {}", message),
+            "info"  => tracing::info!("[lua] {}", message),
+            "warn"  => tracing::warn!("[lua] {}", message),
+            "error" => tracing::error!("[lua] {}", message),
+            _       => tracing::info!("[lua] {}", message),
+        }
+        Ok(())
+    })?;
+    globals.set("log", log_fn)?;
+
     Ok(())
 }
 
