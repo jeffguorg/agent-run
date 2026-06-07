@@ -1,0 +1,10 @@
+[__config__]
+oldver = "oldver"
+newver = "newver"
+
+[deepseek-pricing]
+source = "regex"
+url = "https://kernel.org/"
+regex = "<td>stable:</td>[\r\n \t]*<td><strong>(.*)</strong></td>"
+
+

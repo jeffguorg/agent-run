@@ -87,9 +87,20 @@ args:
 
 ## 风险点
 
-- 把“登录身份切换”和“provider 切换”混在一起，维护会很快变复杂
+- 把”登录身份切换”和”provider 切换”混在一起，维护会很快变复杂
 - 直接改 `auth.json` 要承担未来格式变化的兼容成本
 - 项目级 `.codex/config.toml` 只有在 trusted project 下才会生效，launcher 要考虑工作目录上下文
+
+## agent-run 隔离行为
+
+agent-run 通过 `CODEX_HOME` 将 Codex 指向一个独立的运行时目录（位于 `$XDG_CACHE_HOME/agent-run/codex/<provider>/`），使 Codex 完全看不到用户真实的 `~/.codex/`。
+
+两种启动路径：
+
+- **有 provider**：生成完整的 `config.toml`（含 `model_providers`、`profiles`、`--profile agent-run`），全量覆写。
+- **isolation only**（`isolated_homes` 中定义但无对应 provider）：读取运行时目录下已有的 `config.toml`（不存在则视为空），解析为 TOML，合并 `cli_auth_credentials_store = “file”`，写回。这个设置阻止 Codex 在隔离环境中尝试浏览器/keyring 认证。
+
+运行时目录跨启动持久化，不会每次清空重建。
 
 ## 适合的 profile 结构
 

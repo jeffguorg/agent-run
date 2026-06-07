@@ -46,6 +46,12 @@ pub enum AppError {
     },
     #[error("failed to parse models response from {url}: {reason}")]
     ModelsResponse { url: String, reason: String },
+    #[error("model lua error for provider `{provider}` in `{script}`: {message}")]
+    ModelLua {
+        provider: String,
+        script: String,
+        message: String,
+    },
     #[error("failed to create temporary runtime directory: {0}")]
     TempDir(#[source] std::io::Error),
     #[error("failed to read cache file {path}: {source}")]
@@ -89,6 +95,12 @@ pub enum AppError {
         path: PathBuf,
         #[source]
         source: toml::ser::Error,
+    },
+    #[error("failed to parse TOML config from {path}: {source}")]
+    ParseTomlConfig {
+        path: PathBuf,
+        #[source]
+        source: toml::de::Error,
     },
     #[error("statusline: failed to read stdin: {0}")]
     StatuslineStdin(String),

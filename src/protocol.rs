@@ -9,6 +9,12 @@ use crate::config::ProviderConfig;
 use crate::error::AppError;
 use crate::model::{ModelSource, ModelSpec};
 
+#[derive(Clone, Debug)]
+pub struct FetchedModels {
+    pub models: Vec<ModelSpec>,
+    pub raw_response: Value,
+}
+
 #[derive(Copy, Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
 pub enum Protocol {
@@ -83,7 +89,7 @@ pub fn fetch_models(
     protocol: Protocol,
     base_url: &str,
     key: &str,
-) -> Result<Vec<ModelSpec>, AppError> {
+) -> Result<FetchedModels, AppError> {
     match protocol {
         Protocol::OpenaiChatCompletions | Protocol::OpenaiResponses => {
             fetch_openai_models(base_url, key)
@@ -130,7 +136,7 @@ pub fn resolve_model(
     Ok(resolved)
 }
 
-fn fetch_openai_models(base_url: &str, key: &str) -> Result<Vec<ModelSpec>, AppError> {
+fn fetch_openai_models(base_url: &str, key: &str) -> Result<FetchedModels, AppError> {
     let url = model_list_url(Protocol::OpenaiResponses, base_url);
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -157,11 +163,17 @@ fn fetch_openai_models(base_url: &str, key: &str) -> Result<Vec<ModelSpec>, AppE
     normalize_remote_models(&url, value)
 }
 
-fn fetch_anthropic_models(base_url: &str, key: &str) -> Result<Vec<ModelSpec>, AppError> {
+fn fetch_anthropic_models(base_url: &str, key: &str) -> Result<FetchedModels, AppError> {
     let url = model_list_url(Protocol::Anthropic, base_url);
     let value: Value = Client::new()
         .get(&url)
         .header("x-api-key", key)
+        .header(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {key}")).map_err(|_| {
+                AppError::Message("invalid key for Authorization header".to_string())
+            })?,
+        )
         .header("anthropic-version", "2023-06-01")
         .send()
         .and_then(|resp| resp.error_for_status())
@@ -208,7 +220,7 @@ enum ExtractConfidence {
     Canonical,
 }
 
-fn normalize_remote_models(url: &str, value: Value) -> Result<Vec<ModelSpec>, AppError> {
+fn normalize_remote_models(url: &str, value: Value) -> Result<FetchedModels, AppError> {
     let candidates = collect_model_candidates(&value);
     trace!(
         url,
@@ -235,8 +247,14 @@ fn normalize_remote_models(url: &str, value: Value) -> Result<Vec<ModelSpec>, Ap
             id,
             name: partial.name.map(|field| field.value),
             context_window: partial.context_window.map(|field| field.value),
+            max_output_tokens: None,
             reasoning: partial.reasoning.map(|field| field.value),
             vision: partial.vision.map(|field| field.value),
+            supports_attachments: None,
+            input_cost_per_million: None,
+            output_cost_per_million: None,
+            cached_input_cost_per_million: None,
+            cached_output_cost_per_million: None,
             source: ModelSource::Remote,
         };
         trace!(
@@ -269,7 +287,10 @@ fn normalize_remote_models(url: &str, value: Value) -> Result<Vec<ModelSpec>, Ap
         model_count = models.len(),
         "normalized remote model list"
     );
-    Ok(models)
+    Ok(FetchedModels {
+        models,
+        raw_response: value,
+    })
 }
 
 fn collect_model_candidates<'a>(value: &'a Value) -> Vec<RawModelCandidate<'a>> {

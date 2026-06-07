@@ -120,7 +120,8 @@ pub fn run_config(bootstrap_config: bool) -> Result<ExitCode, AppError> {
         write_demo_config(&path)?;
     }
 
-    let editor = env::var("EDITOR").unwrap_or_else(|_| current_platform::DEFAULT_EDITOR.to_string());
+    let editor =
+        env::var("EDITOR").unwrap_or_else(|_| current_platform::DEFAULT_EDITOR.to_string());
     let status = Command::new(&editor)
         .arg(&path)
         .status()
@@ -187,16 +188,6 @@ pub fn cache_dir() -> Result<PathBuf, AppError> {
     }
 }
 
-pub fn skeleton_dir(agent_name: &str) -> Result<PathBuf, AppError> {
-    Ok(config_path()?
-        .parent()
-        .ok_or_else(|| {
-            AppError::Message("cannot resolve agent-run skeleton directory".to_string())
-        })?
-        .join("skel")
-        .join(agent_name))
-}
-
 pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
     if let Ok(path) = env::var("CRUSH_GLOBAL_CONFIG") {
         return Ok(PathBuf::from(path).join("crush.json"));
@@ -212,6 +203,13 @@ pub fn source_crush_config_path() -> Result<PathBuf, AppError> {
         .join(".config")
         .join("crush")
         .join("crush.json"))
+}
+
+pub fn model_script_dir() -> Result<PathBuf, AppError> {
+    Ok(config_path()?
+        .parent()
+        .ok_or_else(|| AppError::Message("cannot resolve model script directory".to_string()))?
+        .join("model.d"))
 }
 
 pub fn source_claude_state_path() -> Result<PathBuf, AppError> {

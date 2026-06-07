@@ -15,14 +15,14 @@ const MODEL_CACHE_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 const REASONING_DEFAULT: bool = true;
 const VISION_DEFAULT: bool = false;
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum RawModelConfig {
     String(String),
     Object(RawModelObject),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct RawModelObject {
     pub id: String,
     #[serde(default)]
@@ -30,9 +30,21 @@ pub struct RawModelObject {
     #[serde(default)]
     pub context_window: Option<u64>,
     #[serde(default)]
+    pub max_output_tokens: Option<u64>,
+    #[serde(default)]
     pub reasoning: Option<bool>,
     #[serde(default)]
     pub vision: Option<bool>,
+    #[serde(default)]
+    pub supports_attachments: Option<bool>,
+    #[serde(default)]
+    pub input_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub output_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub cached_input_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub cached_output_cost_per_million: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -43,13 +55,19 @@ pub enum ModelSource {
     Cache,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ModelSpec {
     pub id: String,
     pub name: Option<String>,
     pub context_window: Option<u64>,
+    pub max_output_tokens: Option<u64>,
     pub reasoning: Option<bool>,
     pub vision: Option<bool>,
+    pub supports_attachments: Option<bool>,
+    pub input_cost_per_million: Option<f64>,
+    pub output_cost_per_million: Option<f64>,
+    pub cached_input_cost_per_million: Option<f64>,
+    pub cached_output_cost_per_million: Option<f64>,
     pub source: ModelSource,
 }
 
@@ -79,9 +97,21 @@ pub struct CachedModelSpec {
     #[serde(default)]
     pub context_window: Option<u64>,
     #[serde(default)]
+    pub max_output_tokens: Option<u64>,
+    #[serde(default)]
     pub reasoning: Option<bool>,
     #[serde(default)]
     pub vision: Option<bool>,
+    #[serde(default)]
+    pub supports_attachments: Option<bool>,
+    #[serde(default)]
+    pub input_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub output_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub cached_input_cost_per_million: Option<f64>,
+    #[serde(default)]
+    pub cached_output_cost_per_million: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +126,21 @@ pub struct ModelCacheSnapshot {
 pub struct LoadRemoteModels {
     pub models: Vec<ModelSpec>,
     pub used_cache: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ModelSpecPatch {
+    pub id: String,
+    pub name: Option<String>,
+    pub context_window: Option<u64>,
+    pub max_output_tokens: Option<u64>,
+    pub reasoning: Option<bool>,
+    pub vision: Option<bool>,
+    pub supports_attachments: Option<bool>,
+    pub input_cost_per_million: Option<f64>,
+    pub output_cost_per_million: Option<f64>,
+    pub cached_input_cost_per_million: Option<f64>,
+    pub cached_output_cost_per_million: Option<f64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -168,8 +213,14 @@ pub fn normalize_local_models(raw_models: &[RawModelConfig]) -> Vec<ModelSpec> {
                     id: id.clone(),
                     name: None,
                     context_window: None,
+                    max_output_tokens: None,
                     reasoning: None,
                     vision: None,
+                    supports_attachments: None,
+                    input_cost_per_million: None,
+                    output_cost_per_million: None,
+                    cached_input_cost_per_million: None,
+                    cached_output_cost_per_million: None,
                     source: ModelSource::LocalString,
                 };
                 trace!(model_id = %model.id, "normalized local string model");
@@ -180,16 +231,24 @@ pub fn normalize_local_models(raw_models: &[RawModelConfig]) -> Vec<ModelSpec> {
                     id: raw.id.clone(),
                     name: raw.name.clone(),
                     context_window: raw.context_window,
+                    max_output_tokens: raw.max_output_tokens,
                     reasoning: raw.reasoning,
                     vision: raw.vision,
+                    supports_attachments: raw.supports_attachments,
+                    input_cost_per_million: raw.input_cost_per_million,
+                    output_cost_per_million: raw.output_cost_per_million,
+                    cached_input_cost_per_million: raw.cached_input_cost_per_million,
+                    cached_output_cost_per_million: raw.cached_output_cost_per_million,
                     source: ModelSource::LocalObject,
                 };
                 trace!(
                     model_id = %model.id,
                     has_name = model.name.is_some(),
                     has_context_window = model.context_window.is_some(),
+                    has_max_output_tokens = model.max_output_tokens.is_some(),
                     has_reasoning = model.reasoning.is_some(),
                     has_vision = model.vision.is_some(),
+                    has_supports_attachments = model.supports_attachments.is_some(),
                     "normalized local object model"
                 );
                 model
@@ -365,8 +424,14 @@ pub fn load_model_cache(provider_name: &str) -> Result<Option<ModelCacheSnapshot
                 id: model.id,
                 name: model.name,
                 context_window: model.context_window,
+                max_output_tokens: model.max_output_tokens,
                 reasoning: model.reasoning,
                 vision: model.vision,
+                supports_attachments: model.supports_attachments,
+                input_cost_per_million: model.input_cost_per_million,
+                output_cost_per_million: model.output_cost_per_million,
+                cached_input_cost_per_million: model.cached_input_cost_per_million,
+                cached_output_cost_per_million: model.cached_output_cost_per_million,
                 source: ModelSource::Cache,
             })
             .collect(),
@@ -384,7 +449,7 @@ pub fn write_model_cache(
     }
 
     let store = CachedModelStore {
-        version: 1,
+        version: 2,
         provider: provider_name.to_string(),
         protocol: protocol_name(protocol).to_string(),
         models: remote_models
@@ -393,8 +458,14 @@ pub fn write_model_cache(
                 id: model.id.clone(),
                 name: model.name.clone(),
                 context_window: model.context_window,
+                max_output_tokens: model.max_output_tokens,
                 reasoning: model.reasoning,
                 vision: model.vision,
+                supports_attachments: model.supports_attachments,
+                input_cost_per_million: model.input_cost_per_million,
+                output_cost_per_million: model.output_cost_per_million,
+                cached_input_cost_per_million: model.cached_input_cost_per_million,
+                cached_output_cost_per_million: model.cached_output_cost_per_million,
             })
             .collect(),
     };
@@ -508,10 +579,65 @@ fn merge_preferred(preferred: ModelSpec, fallback: ModelSpec) -> ModelSpec {
         id: preferred.id,
         name: preferred.name.or(fallback.name),
         context_window: preferred.context_window.or(fallback.context_window),
+        max_output_tokens: preferred.max_output_tokens.or(fallback.max_output_tokens),
         reasoning: preferred.reasoning.or(fallback.reasoning),
         vision: preferred.vision.or(fallback.vision),
+        supports_attachments: preferred
+            .supports_attachments
+            .or(fallback.supports_attachments),
+        input_cost_per_million: preferred
+            .input_cost_per_million
+            .or(fallback.input_cost_per_million),
+        output_cost_per_million: preferred
+            .output_cost_per_million
+            .or(fallback.output_cost_per_million),
+        cached_input_cost_per_million: preferred
+            .cached_input_cost_per_million
+            .or(fallback.cached_input_cost_per_million),
+        cached_output_cost_per_million: preferred
+            .cached_output_cost_per_million
+            .or(fallback.cached_output_cost_per_million),
         source: preferred.source,
     }
+}
+
+pub fn apply_model_patches(models: &[ModelSpec], patches: &[ModelSpecPatch]) -> Vec<ModelSpec> {
+    let patch_by_id = patches
+        .iter()
+        .map(|patch| (patch.id.as_str(), patch))
+        .collect::<BTreeMap<_, _>>();
+
+    models
+        .iter()
+        .map(|model| {
+            let Some(patch) = patch_by_id.get(model.id.as_str()) else {
+                return model.clone();
+            };
+
+            ModelSpec {
+                id: model.id.clone(),
+                name: patch.name.clone().or_else(|| model.name.clone()),
+                context_window: patch.context_window.or(model.context_window),
+                max_output_tokens: patch.max_output_tokens.or(model.max_output_tokens),
+                reasoning: patch.reasoning.or(model.reasoning),
+                vision: patch.vision.or(model.vision),
+                supports_attachments: patch.supports_attachments.or(model.supports_attachments),
+                input_cost_per_million: patch
+                    .input_cost_per_million
+                    .or(model.input_cost_per_million),
+                output_cost_per_million: patch
+                    .output_cost_per_million
+                    .or(model.output_cost_per_million),
+                cached_input_cost_per_million: patch
+                    .cached_input_cost_per_million
+                    .or(model.cached_input_cost_per_million),
+                cached_output_cost_per_million: patch
+                    .cached_output_cost_per_million
+                    .or(model.cached_output_cost_per_million),
+                source: model.source,
+            }
+        })
+        .collect()
 }
 
 fn parse_cached_protocol(name: &str) -> Option<Protocol> {

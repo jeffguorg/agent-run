@@ -2,7 +2,7 @@
 
 `agent-run` is a small launcher for coding agents.
 
-It keeps provider settings in one place, then starts a target agent with temporary runtime config instead of asking you to manually rewrite per-agent config files every time.
+It keeps provider settings in one place, then adapts them for each target agent instead of asking you to manually rewrite per-agent config files every time.
 
 Current focus:
 
@@ -64,8 +64,9 @@ The provider config stays generic; each agent adapter is responsible for mapping
 ### Crush
 
 - protocol: prefers `openai-chat-completions`, falls back to `anthropic`
-- launch mode: generated `crush.json` plus isolated `--data-dir`
-- merges existing global Crush config into the runtime config
+- launch mode: synchronizes managed providers into global `crush.json`
+- injects provider keys with per-process environment variables
+- writes Crush options to rely on synced providers and disable provider auto-update
 
 ## Configuration
 
@@ -169,8 +170,7 @@ agent-run launch sandbox hermes
 - `isolated_homes.codex.<name>` and `isolated_homes.hermes.<name>` allow launching that agent with an isolated runtime home even when no provider exists.
 - Entries are empty objects today. They do not accept `key`, `base_url`, `model`, or custom paths.
 - When both a provider and an isolated home entry share the same name, agent-run combines them: isolated runtime home plus provider-derived runtime config.
-- Runtime homes are rebuilt from scratch on each launch. agent-run never copies or merges your existing `CODEX_HOME` or `HERMES_HOME`.
-- Optional skeleton files are copied from `~/.config/agent-run/skel/<agent>/` before agent-run writes any generated runtime config.
+- Runtime homes persist across launches. agent-run reuses the existing directory and only updates the generated config file.
 
 Launch Crush:
 
@@ -266,16 +266,21 @@ providers:
 
 ## Runtime Strategy
 
-`agent-run` tries to avoid modifying long-lived agent config unless necessary.
+`agent-run` avoids modifying long-lived agent config for single-provider agents. Crush is the intentional multi-provider exception: its global config is the place where configured providers live, while secrets are still injected at launch time.
 
 - `claude` uses temporary env plus a one-time onboarding state fix
 - `codex` uses generated runtime config under cache
 - `hermes` uses generated runtime config under cache
-- `crush` uses generated runtime config and isolated data dir under cache
+- `crush` synchronizes all compatible `providers.*` entries into `~/.config/crush/crush.json` and marks them as agent-run managed
 
 Crush note:
 
-- `CRUSH_GLOBAL_CONFIG` must point to a config directory, not directly to `crush.json`
+- Existing non-agent-run Crush providers are preserved. If a provider name conflicts, rename one side or remove the unmanaged Crush entry.
+- Managed Crush providers store API key placeholders such as `${DEEPSEEK_API_KEY:?...}`; agent-run sets those env vars only for the launched process.
+- agent-run removes stale managed Crush providers only when they are no longer present in `agent-run` config. A provider that temporarily fails to resolve is skipped for this launch but not deleted from `crush.json`.
+- agent-run does not pass a launch model to Crush. Crush does not currently support a general launch-time model override, so model selection is left to Crush defaults, `crush run --model`, or the UI.
+- agent-run writes `options.disable_default_providers = true` and `options.disable_provider_auto_update = true` in `crush.json`.
+- Managed Crush providers include the known model `id` and `name` so Crush has a usable local model list even when the provider API is unreachable; Crush can still discover models from the provider API at runtime.
 - Crush may still read the current project directory and initialize project-local files such as `AGENTS.md`
 
 ## Development

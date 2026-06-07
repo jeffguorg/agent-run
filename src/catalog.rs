@@ -3,9 +3,11 @@ use tracing::{debug, warn};
 use crate::config::ProviderConfig;
 use crate::error::AppError;
 use crate::model::{
-    LoadRemoteModels, ModelSpec, apply_model_api_filters, load_cached_remote_models,
-    load_model_cache, log_cache_fallback, merge_models, normalize_local_models, write_model_cache,
+    LoadRemoteModels, ModelSpec, apply_model_api_filters, apply_model_patches,
+    load_cached_remote_models, load_model_cache, log_cache_fallback, merge_models,
+    normalize_local_models, write_model_cache,
 };
+use crate::model_lua::enrich_models;
 use crate::protocol::{
     Protocol, base_url_for, fetch_models, model_list_url, protocol_name, resolve_key,
 };
@@ -95,7 +97,9 @@ pub fn load_remote_models_for_protocol(
     }
 
     match fetch_models(protocol, base_url, key) {
-        Ok(models) => {
+        Ok(fetched) => {
+            let patches = enrich_models(provider_name, &fetched.models, &fetched.raw_response)?;
+            let models = apply_model_patches(&fetched.models, &patches);
             let models = apply_model_api_filters(provider_name, &models, filters)?;
             write_model_cache(provider_name, protocol, &models)?;
             Ok(LoadRemoteModels {
@@ -256,8 +260,12 @@ fn model_catalog_score(models: &[ModelSpec]) -> usize {
         .map(|model| {
             usize::from(model.name.is_some()) * 4
                 + usize::from(model.context_window.is_some()) * 4
+                + usize::from(model.max_output_tokens.is_some()) * 2
                 + usize::from(model.reasoning.is_some()) * 2
                 + usize::from(model.vision.is_some()) * 2
+                + usize::from(model.supports_attachments.is_some()) * 2
+                + usize::from(model.input_cost_per_million.is_some()) * 2
+                + usize::from(model.output_cost_per_million.is_some()) * 2
         })
         .sum()
 }

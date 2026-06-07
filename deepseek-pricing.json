@@ -1,0 +1,41 @@
+{
+  "currency": "CNY",
+  "fetched_at": "2026-06-05T10:24:42.495958+00:00",
+  "models": [
+    {
+      "cached_input_cost_per_million": 0.02,
+      "cached_output_cost_per_million": null,
+      "context_window": 1000000,
+      "id": "deepseek-v4-flash",
+      "input_cost_per_million": null,
+      "max_output_tokens": 384000,
+      "name": "DeepSeek-V4-Flash",
+      "output_cost_per_million": null,
+      "reasoning": true,
+      "source": {
+        "kind": "deepseek-pricing-page",
+        "url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing"
+      },
+      "supports_attachments": false,
+      "vision": false
+    },
+    {
+      "cached_input_cost_per_million": 0.025,
+      "cached_output_cost_per_million": null,
+      "context_window": 1000000,
+      "id": "deepseek-v4-pro",
+      "input_cost_per_million": null,
+      "max_output_tokens": 384000,
+      "name": "DeepSeek-V4-Pro",
+      "output_cost_per_million": null,
+      "reasoning": true,
+      "source": {
+        "kind": "deepseek-pricing-page",
+        "url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing"
+      },
+      "supports_attachments": false,
+      "vision": false
+    }
+  ],
+  "source_url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing"
+}
