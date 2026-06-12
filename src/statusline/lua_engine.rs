@@ -71,6 +71,11 @@ pub fn run_parts(
     let scripts = discover_scripts()?;
     info!("discovered {} statusline part scripts", scripts.len());
 
+    // Static context (stdin, env, cwd, git) doesn't vary across scripts — build
+    // it once. Building it inside the loop forks `git status` per script, which
+    // is ~3s/call in huge repos like Chromium.
+    let ctx = build_context_table(&lua, stdin_data, accessed.clone())?;
+
     let mut output = String::new();
     let mut display_index: u32 = 0;
 
@@ -84,8 +89,6 @@ pub fn run_parts(
                 continue;
             }
         };
-
-        let ctx = build_context_table(&lua, stdin_data, accessed.clone())?;
 
         let matcher_fn: mlua::Function = match module.get("matcher") {
             Ok(f) => f,
